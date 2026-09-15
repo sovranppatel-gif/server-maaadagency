@@ -1,0 +1,30 @@
+{
+  "name": "maaadagency-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Maa Ad Agency — Master Admin backend (Node + Express + MongoDB + WhatsApp Business API)",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "node --watch --env-file=.env src/server.js",
+    "start": "node --env-file=.env src/server.js",
+    "seed": "node --env-file=.env src/seed/seed.js",
+    "seed:fresh": "node --env-file=.env src/seed/seed.js --fresh"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "compression": "^1.8.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.19.1",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "socket.io": "^4.8.1",
+    "zod": "^4.1.13"
+  }
+}
