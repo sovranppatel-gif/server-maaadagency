@@ -84,3 +84,8 @@ export function createApp() {
 
   return app;
 }
+
+// Vercel can use this Express application directly as a serverless handler.
+// The local entrypoint still calls createApp() and owns app.listen().
+const app = createApp();
+export default app;

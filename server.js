@@ -1,7 +1,6 @@
-import { createApp } from "./src/app.js";
+import app from "./src/app.js";
 import { connectDB } from "./src/config/db.js";
 
-const app = createApp();
 let databasePromise;
 
 function ensureDatabase() {

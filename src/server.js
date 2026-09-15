@@ -1,5 +1,5 @@
 import http from "node:http";
-import { createApp } from "./app.js";
+import app from "./app.js";
 import { connectDB, disconnectDB } from "./config/db.js";
 import { initSocket } from "./config/socket.js";
 import { env } from "./config/env.js";
@@ -9,7 +9,6 @@ import { getConnectionStatus } from "./services/whatsapp.service.js";
 async function bootstrap() {
   await connectDB();
 
-  const app = createApp();
   const server = http.createServer(app);
   initSocket(server);
 
