@@ -33,6 +33,31 @@ npm run dev                   # http://localhost:5000
 
 Verify: `curl http://localhost:5000/api/health`
 
+## Deploy the API to Vercel
+
+Create a separate Vercel project for this folder and set its **Root Directory**
+to `server`. Vercel uses the root `server.js` entrypoint; the local
+long-running process in `src/server.js` remains available for development.
+
+Add these environment variables in the Vercel project for Preview and
+Production:
+
+```text
+NODE_ENV=production
+MONGODB_URI=<your MongoDB Atlas connection string>
+JWT_ACCESS_SECRET=<random value, at least 16 characters>
+JWT_REFRESH_SECRET=<different random value, at least 16 characters>
+CLIENT_ORIGIN=https://<your-frontend-domain>
+```
+
+Add the WhatsApp and seed variables as needed. The API is available at
+`https://<server-project>.vercel.app/api/health`.
+
+Vercel Functions are stateless. Socket.IO requires a persistent server and is
+not started by the Vercel entrypoint. The current upload route uses temporary
+`/tmp` storage on Vercel, so files are not durable; use Vercel Blob, S3, or
+another object store before relying on production uploads.
+
 Seeded logins (change them before any real deployment):
 
 | Role         | Email                           | Password         |

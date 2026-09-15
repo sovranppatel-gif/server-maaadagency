@@ -7,6 +7,9 @@ mongoose.set("strictQuery", true);
 if (!isProd) mongoose.set("debug", false);
 
 export async function connectDB() {
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
+  if (mongoose.connection.readyState === 2) return mongoose.connection.asPromise();
+
   if (env.MONGODB_DNS_SERVERS.length > 0) dns.setServers(env.MONGODB_DNS_SERVERS);
 
   mongoose.connection.on("connected", () =>

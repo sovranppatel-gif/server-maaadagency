@@ -5,7 +5,10 @@ import multer from "multer";
 import { env } from "../config/env.js";
 import { ApiError } from "../utils/ApiError.js";
 
-const UPLOAD_ROOT = path.resolve(process.cwd(), env.UPLOAD_DIR);
+// Vercel only provides writable temporary storage; durable uploads need Blob/S3.
+const UPLOAD_ROOT = process.env.VERCEL
+  ? path.join("/tmp", "maaadagency-uploads")
+  : path.resolve(process.cwd(), env.UPLOAD_DIR);
 fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
 
 const ALLOWED_MIME = new Set([
