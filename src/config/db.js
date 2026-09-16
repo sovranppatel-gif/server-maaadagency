@@ -14,6 +14,7 @@ const mongoCache = globalThis.__maaadagencyMongoCache ??= {
   promise: null,
   disconnectPromise: null,
   listenersAttached: false,
+  lastError: null,
 };
 
 function attachConnectionListeners() {
@@ -23,7 +24,10 @@ function attachConnectionListeners() {
   mongoose.connection.on("connected", () =>
     logger.info("MongoDB connected", { db: mongoose.connection.name })
   );
-  mongoose.connection.on("error", (err) => logger.error("MongoDB error", { error: err.message }));
+  mongoose.connection.on("error", (err) => {
+    mongoCache.lastError = { message: err.message, code: err.code, name: err.name };
+    logger.error("MongoDB error", { error: err.message, code: err.code, name: err.name });
+  });
   mongoose.connection.on("disconnected", () => {
     // A fulfilled promise only represents the old connection. Clear it so the
     // next serverless invocation creates a fresh connection instead of using
@@ -41,6 +45,7 @@ function trackConnection(promise) {
       return mongoose.connection;
     })
     .catch((error) => {
+      mongoCache.lastError = { message: error.message, code: error.code, name: error.name };
       if (mongoCache.promise === tracked) mongoCache.promise = null;
       mongoCache.connection = null;
       throw error;
@@ -99,4 +104,8 @@ export async function connectDB() {
 
 export async function disconnectDB() {
   await mongoose.connection.close();
+}
+
+export function getMongoDBError() {
+  return mongoCache.lastError;
 }

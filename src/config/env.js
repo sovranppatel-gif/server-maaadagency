@@ -37,6 +37,8 @@ const EnvSchema = z.object({
 
   UPLOAD_DIR: z.string().default("uploads"),
   MAX_UPLOAD_MB: z.coerce.number().positive().default(15),
+
+  MONGODB_DIAGNOSTIC: z.string().default("false"),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
