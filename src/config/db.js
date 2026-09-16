@@ -12,6 +12,7 @@ if (!isProd) mongoose.set("debug", false);
 const mongoCache = globalThis.__maaadagencyMongoCache ??= {
   connection: null,
   promise: null,
+  disconnectPromise: null,
   listenersAttached: false,
 };
 
@@ -23,50 +24,77 @@ function attachConnectionListeners() {
     logger.info("MongoDB connected", { db: mongoose.connection.name })
   );
   mongoose.connection.on("error", (err) => logger.error("MongoDB error", { error: err.message }));
-  mongoose.connection.on("disconnected", () => logger.warn("MongoDB disconnected"));
+  mongoose.connection.on("disconnected", () => {
+    // A fulfilled promise only represents the old connection. Clear it so the
+    // next serverless invocation creates a fresh connection instead of using
+    // stale state.
+    mongoCache.connection = null;
+    mongoCache.promise = null;
+    logger.warn("MongoDB disconnected");
+  });
 }
 
-export async function connectDB() {
-  if (mongoose.connection.readyState === 1) {
-    mongoCache.connection = mongoose.connection;
-    return mongoose.connection;
-  }
-  if (mongoCache.promise) return mongoCache.promise;
-  if (mongoose.connection.readyState === 2) {
-    mongoCache.promise = mongoose.connection
-      .asPromise()
-      .then(() => {
-        mongoCache.connection = mongoose.connection;
-        return mongoose.connection;
-      })
-      .catch((error) => {
-        mongoCache.promise = null;
-        mongoCache.connection = null;
-        throw error;
-      });
-    return mongoCache.promise;
-  }
-
-  if (env.MONGODB_DNS_SERVERS.length > 0) dns.setServers(env.MONGODB_DNS_SERVERS);
-  attachConnectionListeners();
-
-  mongoCache.promise = mongoose
-    .connect(env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 10_000,
-      maxPoolSize: 20,
-      autoIndex: !isProd, // build indexes in dev; manage explicitly in production
-    })
+function trackConnection(promise) {
+  const tracked = promise
     .then(() => {
       mongoCache.connection = mongoose.connection;
       return mongoose.connection;
     })
     .catch((error) => {
-      mongoCache.promise = null;
+      if (mongoCache.promise === tracked) mongoCache.promise = null;
       mongoCache.connection = null;
       throw error;
     });
+  mongoCache.promise = tracked;
+  return tracked;
+}
 
-  return mongoCache.promise;
+function beginConnection() {
+  if (env.MONGODB_DNS_SERVERS.length > 0) dns.setServers(env.MONGODB_DNS_SERVERS);
+  return trackConnection(
+    mongoose.connect(env.MONGODB_URI, {
+      serverSelectionTimeoutMS: 10_000,
+      maxPoolSize: 20,
+      autoIndex: !isProd, // build indexes in dev; manage explicitly in production
+    })
+  );
+}
+
+export async function connectDB() {
+  attachConnectionListeners();
+
+  switch (mongoose.connection.readyState) {
+    case 1: // connected
+      mongoCache.connection = mongoose.connection;
+      return mongoose.connection;
+
+    case 2: // connecting
+      if (!mongoCache.promise) return trackConnection(mongoose.connection.asPromise());
+      return mongoCache.promise;
+
+    case 3: // disconnecting
+      if (!mongoCache.disconnectPromise) {
+        mongoCache.disconnectPromise = new Promise((resolve) => {
+          mongoose.connection.once("disconnected", resolve);
+        })
+          .then(() => {
+            mongoCache.disconnectPromise = null;
+            return connectDB();
+          })
+          .catch((error) => {
+            mongoCache.disconnectPromise = null;
+            throw error;
+          });
+      }
+      return mongoCache.disconnectPromise;
+
+    default: // disconnected
+      // Never return a fulfilled promise from a previous connection.
+      if (mongoCache.disconnectPromise) return mongoCache.disconnectPromise;
+      mongoCache.connection = null;
+      mongoCache.promise = null;
+      return beginConnection();
+  }
 }
 
 export async function disconnectDB() {
