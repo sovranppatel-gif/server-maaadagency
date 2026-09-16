@@ -1,60 +1,40 @@
-import { z } from "zod";
+const required = (name, fallback = null) => {
+  const v = process.env[name];
+  if (v !== undefined && v !== "") return v;
+  if (fallback !== null) return fallback;
+  throw new Error(`Missing required environment variable: ${name}`);
+};
 
-/**
- * Fail fast on misconfiguration: the process should never boot with a
- * half-configured environment. Every value the app reads comes from here.
- */
-const EnvSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  PORT: z.coerce.number().int().positive().default(5000),
-  CLIENT_ORIGIN: z.string().default("http://localhost:3000"),
+export const env = {
+  port: Number(process.env.PORT) || 5000,
+  nodeEnv: process.env.NODE_ENV || "development",
+  mongoUri: required("MONGO_URI", "mongodb://127.0.0.1:27017/maaadagency"),
+  clientOrigin: process.env.CLIENT_ORIGIN || "http://localhost:3000",
 
-  MONGODB_URI: z.string().min(1, "MONGODB_URI is required"),
-  MONGODB_DNS_SERVERS: z
-    .string()
-    .default("")
-    .transform((value) => value.split(",").map((server) => server.trim()).filter(Boolean)),
+  jwtAccessSecret: required("JWT_ACCESS_SECRET", "dev-only-change-me-use-strong-secret-in-production"),
+  jwtRefreshSecret: required("JWT_REFRESH_SECRET", "dev-only-change-me-use-strong-secret-in-production"),
+  jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || "15m",
+  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || "7d",
 
-  JWT_ACCESS_SECRET: z.string().min(16, "JWT_ACCESS_SECRET must be at least 16 chars"),
-  JWT_REFRESH_SECRET: z.string().min(16, "JWT_REFRESH_SECRET must be at least 16 chars"),
-  JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
-  JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
+  seedAdminEmail: (process.env.SEED_ADMIN_EMAIL || "admin@maaadagency.com").toLowerCase().trim(),
+  seedAdminPassword: process.env.SEED_ADMIN_PASSWORD || "Admin@12345",
+  seedEmployeePassword: process.env.SEED_EMPLOYEE_PASSWORD || "Employee@12345",
 
-  SEED_ADMIN_EMAIL: z.string().email().default("admin@maaadagency.com"),
-  SEED_ADMIN_PASSWORD: z.string().min(8).default("Admin@12345"),
-  SEED_EMPLOYEE_PASSWORD: z.string().min(8).default("Employee@12345"),
+  whatsappApiVersion: process.env.WHATSAPP_API_VERSION || "v21.0",
+  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
+  whatsappBusinessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
+  whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN || "",
+  whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || "",
+  whatsappAppSecret: process.env.WHATSAPP_APP_SECRET || "",
+  whatsappDryRun: String(process.env.WHATSAPP_DRY_RUN || "true").toLowerCase() === "true",
 
-  WHATSAPP_API_VERSION: z.string().default("v21.0"),
-  WHATSAPP_PHONE_NUMBER_ID: z.string().default(""),
-  WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().default(""),
-  WHATSAPP_ACCESS_TOKEN: z.string().default(""),
-  WHATSAPP_VERIFY_TOKEN: z.string().default(""),
-  WHATSAPP_APP_SECRET: z.string().default(""),
-  WHATSAPP_DRY_RUN: z
-    .string()
-    .default("true")
-    .transform((v) => v.toLowerCase() === "true"),
+  uploadDir: process.env.UPLOAD_DIR || "uploads",
+  maxUploadMb: Number(process.env.MAX_UPLOAD_MB) || 15,
+};
 
-  UPLOAD_DIR: z.string().default("uploads"),
-  MAX_UPLOAD_MB: z.coerce.number().positive().default(15),
+export const isProd = env.nodeEnv === "production";
+export const isDev = env.nodeEnv === "development";
 
-  MONGODB_DIAGNOSTIC: z.string().default("false"),
-});
-
-const parsed = EnvSchema.safeParse(process.env);
-
-if (!parsed.success) {
-  const details = parsed.error.issues.map((i) => `  • ${i.path.join(".")}: ${i.message}`).join("\n");
-  console.error(`\n✖ Invalid environment configuration:\n${details}\n`);
-  process.exit(1);
-}
-
-export const env = parsed.data;
-
-export const isProd = env.NODE_ENV === "production";
-export const isDev = env.NODE_ENV === "development";
-
-/** WhatsApp is "live" only when every credential needed to call Meta is present. */
 export const whatsappConfigured = Boolean(
-  env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_ACCESS_TOKEN && !env.WHATSAPP_DRY_RUN
+  env.whatsappPhoneNumberId && env.whatsappAccessToken && !env.whatsappDryRun
 );

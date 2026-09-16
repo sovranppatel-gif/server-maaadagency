@@ -8,7 +8,7 @@ import { ApiError } from "../utils/ApiError.js";
 // Vercel only provides writable temporary storage; durable uploads need Blob/S3.
 const UPLOAD_ROOT = process.env.VERCEL
   ? path.join("/tmp", "maaadagency-uploads")
-  : path.resolve(process.cwd(), env.UPLOAD_DIR);
+  : path.resolve(process.cwd(), env.uploadDir);
 fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
 
 const ALLOWED_MIME = new Set([
@@ -30,7 +30,7 @@ const storage = multer.diskStorage({
 
 export const upload = multer({
   storage,
-  limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: 10 },
+  limits: { fileSize: env.maxUploadMb * 1024 * 1024, files: 10 },
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_MIME.has(file.mimetype)) return cb(null, true);
     return cb(ApiError.badRequest(`Unsupported file type: ${file.mimetype}`));

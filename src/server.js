@@ -3,46 +3,70 @@ import app from "./app.js";
 import { connectDB, disconnectDB } from "./config/db.js";
 import { initSocket } from "./config/socket.js";
 import { env } from "./config/env.js";
-import { logger } from "./config/logger.js";
 import { getConnectionStatus } from "./services/whatsapp.service.js";
 
-async function bootstrap() {
-  await connectDB();
+const server = http.createServer(app);
+initSocket(server);
 
-  const server = http.createServer(app);
-  initSocket(server);
+function listen() {
+  return new Promise((resolve, reject) => {
+    const onError = (err) => {
+      if (err.code === "EADDRINUSE") {
+        reject(new Error(`Port ${env.port} is already in use. Stop the other server process and try again.`));
+        return;
+      }
+      reject(err);
+    };
 
-  server.listen(env.PORT, () => {
-    const wa = getConnectionStatus();
-    logger.info(`API listening on http://localhost:${env.PORT}`, { env: env.NODE_ENV });
-    logger.info(`WhatsApp: ${wa.connected ? "live" : "dry-run (no messages will be sent)"}`);
-  });
-
-  /** Finish in-flight requests before exiting, then close the DB cleanly. */
-  const shutdown = async (signal) => {
-    logger.warn(`${signal} received, shutting down`);
-    server.close(async () => {
-      await disconnectDB();
-      logger.info("Shutdown complete");
-      process.exit(0);
+    server.once("error", onError);
+    server.listen(env.port, () => {
+      server.off("error", onError);
+      console.log(`Server listening on http://localhost:${env.port}`);
+      resolve();
     });
-    // Do not hang forever if a connection refuses to drain.
-    setTimeout(() => process.exit(1), 10_000).unref();
-  };
-
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
-
-  process.on("unhandledRejection", (reason) => {
-    logger.error("Unhandled promise rejection", { reason: String(reason) });
-  });
-  process.on("uncaughtException", (err) => {
-    logger.error("Uncaught exception", { error: err.message, stack: err.stack });
-    process.exit(1);
   });
 }
 
-bootstrap().catch((err) => {
-  logger.error("Failed to start server", { error: err.message, stack: err.stack });
+async function shutdown(signal) {
+  console.log(`Shutting down (${signal})...`);
+  try {
+    await new Promise((resolve) => {
+      server.close(() => resolve());
+      setTimeout(resolve, 800);
+    });
+    await disconnectDB();
+  } catch {
+    // ignore
+  }
+  process.exit(0);
+}
+
+process.once("SIGINT", () => void shutdown("SIGINT"));
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
+
+async function connectMongoWithRetry() {
+  for (;;) {
+    try {
+      await connectDB();
+      return;
+    } catch (err) {
+      console.error("MongoDB connect failed, retrying in 3s:", err?.message || err);
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  }
+}
+
+async function start() {
+  console.log("Booting API...");
+
+  await listen();
+  await connectMongoWithRetry();
+
+  const wa = getConnectionStatus();
+  console.log(`WhatsApp: ${wa.connected ? "live" : "dry-run (no messages will be sent)"}`);
+}
+
+start().catch((err) => {
+  console.error("Failed to start server:", err);
   process.exit(1);
 });

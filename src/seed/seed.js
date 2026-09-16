@@ -94,12 +94,12 @@ async function seed() {
   logger.info(`Seeded ${employeeMap.size} employees`);
 
   /* 3. Users (master admin + one login per employee) ---------------------- */
-  const adminPasswordHash = await User.hashPassword(env.SEED_ADMIN_PASSWORD);
-  const employeePasswordHash = await User.hashPassword(env.SEED_EMPLOYEE_PASSWORD);
+  const adminPasswordHash = await User.hashPassword(env.seedAdminPassword);
+  const employeePasswordHash = await User.hashPassword(env.seedEmployeePassword);
 
   await User.create({
     name: "Master Admin",
-    email: env.SEED_ADMIN_EMAIL,
+    email: env.seedAdminEmail,
     role: "MASTER_ADMIN",
     passwordHash: adminPasswordHash,
     avatarColor: "#C5161D",
@@ -357,8 +357,8 @@ async function seed() {
   ]);
 
   logger.info("Seed complete");
-  logger.info(`Admin login: ${env.SEED_ADMIN_EMAIL} / ${env.SEED_ADMIN_PASSWORD}`);
-  logger.info(`Employee login example: rahul.sharma@maaadagency.com / ${env.SEED_EMPLOYEE_PASSWORD}`);
+  logger.info(`Admin login: ${env.seedAdminEmail} / ${env.seedAdminPassword}`);
+  logger.info(`Employee login example: rahul.sharma@maaadagency.com / ${env.seedEmployeePassword}`);
 
   await disconnectDB();
 }

@@ -11,7 +11,7 @@ let io = null;
  */
 export function initSocket(httpServer) {
   io = new Server(httpServer, {
-    cors: { origin: env.CLIENT_ORIGIN.split(",").map((o) => o.trim()), credentials: true },
+    cors: { origin: env.clientOrigin.split(",").map((o) => o.trim()), credentials: true },
   });
 
   io.use((socket, next) => {

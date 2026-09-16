@@ -6,14 +6,14 @@ import { ApiError } from "../utils/ApiError.js";
 const GRAPH_BASE = "https://graph.facebook.com";
 
 function endpoint(pathSuffix) {
-  return `${GRAPH_BASE}/${env.WHATSAPP_API_VERSION}/${pathSuffix}`;
+  return `${GRAPH_BASE}/${env.whatsappApiVersion}/${pathSuffix}`;
 }
 
 async function callGraph(pathSuffix, body) {
   const res = await fetch(endpoint(pathSuffix), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}`,
+      Authorization: `Bearer ${env.whatsappAccessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -40,7 +40,7 @@ export async function sendTextMessage(to, text) {
     return { dryRun: true, messageId: `dryrun-${crypto.randomUUID()}` };
   }
 
-  const json = await callGraph(`${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+  const json = await callGraph(`${env.whatsappPhoneNumberId}/messages`, {
     messaging_product: "whatsapp",
     recipient_type: "individual",
     to,
@@ -58,7 +58,7 @@ export async function sendTemplateMessage(to, templateName, languageCode = "en_U
     return { dryRun: true, messageId: `dryrun-${crypto.randomUUID()}` };
   }
 
-  const json = await callGraph(`${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+  const json = await callGraph(`${env.whatsappPhoneNumberId}/messages`, {
     messaging_product: "whatsapp",
     to,
     type: "template",
@@ -71,7 +71,7 @@ export async function sendTemplateMessage(to, templateName, languageCode = "en_U
 /** Marks an inbound message as read so the customer sees blue ticks. */
 export async function markMessageRead(waMessageId) {
   if (!whatsappConfigured || !waMessageId) return { dryRun: true };
-  return callGraph(`${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+  return callGraph(`${env.whatsappPhoneNumberId}/messages`, {
     messaging_product: "whatsapp",
     status: "read",
     message_id: waMessageId,
@@ -82,7 +82,7 @@ export async function markMessageRead(waMessageId) {
 export async function getMediaUrl(mediaId) {
   if (!whatsappConfigured) return null;
   const res = await fetch(endpoint(mediaId), {
-    headers: { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` },
+    headers: { Authorization: `Bearer ${env.whatsappAccessToken}` },
   });
   if (!res.ok) return null;
   const json = await res.json();
@@ -94,9 +94,7 @@ export async function getMediaUrl(mediaId) {
  * Requires the raw request body, captured in app.js.
  */
 export function verifyWebhookSignature(rawBody, signatureHeader) {
-  if (!env.WHATSAPP_APP_SECRET) {
-    // Production webhooks must never accept unsigned requests. Local dry-run
-    // development remains usable without configuring a Meta app secret.
+  if (!env.whatsappAppSecret) {
     if (isProd) {
       logger.error("Webhook signature rejected: WHATSAPP_APP_SECRET is not set");
       return false;
@@ -106,7 +104,7 @@ export function verifyWebhookSignature(rawBody, signatureHeader) {
   }
   if (!signatureHeader || !rawBody) return false;
 
-  const expected = `sha256=${crypto.createHmac("sha256", env.WHATSAPP_APP_SECRET).update(rawBody).digest("hex")}`;
+  const expected = `sha256=${crypto.createHmac("sha256", env.whatsappAppSecret).update(rawBody).digest("hex")}`;
   const a = Buffer.from(expected);
   const b = Buffer.from(signatureHeader);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -114,7 +112,7 @@ export function verifyWebhookSignature(rawBody, signatureHeader) {
 
 /** Answers Meta's GET verification handshake. */
 export function verifySubscription({ mode, token, challenge }) {
-  if (mode === "subscribe" && token && token === env.WHATSAPP_VERIFY_TOKEN) return challenge;
+  if (mode === "subscribe" && token && token === env.whatsappVerifyToken) return challenge;
   return null;
 }
 
@@ -122,12 +120,12 @@ export function verifySubscription({ mode, token, challenge }) {
 export function getConnectionStatus() {
   return {
     connected: whatsappConfigured,
-    dryRun: env.WHATSAPP_DRY_RUN,
-    apiVersion: env.WHATSAPP_API_VERSION,
-    phoneNumberIdConfigured: Boolean(env.WHATSAPP_PHONE_NUMBER_ID),
-    accessTokenConfigured: Boolean(env.WHATSAPP_ACCESS_TOKEN),
-    verifyTokenConfigured: Boolean(env.WHATSAPP_VERIFY_TOKEN),
-    appSecretConfigured: Boolean(env.WHATSAPP_APP_SECRET),
+    dryRun: env.whatsappDryRun,
+    apiVersion: env.whatsappApiVersion,
+    phoneNumberIdConfigured: Boolean(env.whatsappPhoneNumberId),
+    accessTokenConfigured: Boolean(env.whatsappAccessToken),
+    verifyTokenConfigured: Boolean(env.whatsappVerifyToken),
+    appSecretConfigured: Boolean(env.whatsappAppSecret),
   };
 }
 

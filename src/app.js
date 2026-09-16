@@ -26,7 +26,7 @@ export function createApp() {
     })
   );
 
-  const allowedOrigins = env.CLIENT_ORIGIN.split(",").map((o) => o.trim());
+  const allowedOrigins = env.clientOrigin.split(",").map((o) => o.trim());
   app.use(
     cors({
       origin(origin, callback) {
@@ -63,7 +63,7 @@ export function createApp() {
   // Uploaded assets. Static, non-executable, served read-only.
   app.use(
     "/uploads",
-    express.static(path.resolve(process.cwd(), env.UPLOAD_DIR), {
+    express.static(path.resolve(process.cwd(), env.uploadDir), {
       index: false,
       dotfiles: "deny",
       maxAge: "7d",
