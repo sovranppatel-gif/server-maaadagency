@@ -109,3 +109,29 @@ export async function disconnectDB() {
 export function getMongoDBError() {
   return mongoCache.lastError;
 }
+
+export function getMongoDBDiagnostic() {
+  const uri = env.MONGODB_URI;
+  if (!uri) {
+    return { configured: false, error: "MONGODB_URI not set" };
+  }
+
+  try {
+    const url = new URL(uri);
+    return {
+      configured: true,
+      scheme: url.protocol.replace(":", ""),
+      host: url.hostname,
+      database: url.pathname.replace("/", ""),
+      hasPassword: Boolean(url.password),
+      uriLength: uri.length,
+    };
+  } catch (err) {
+    return {
+      configured: true,
+      parseError: err.message,
+      uriLength: uri.length,
+      firstChars: uri.substring(0, 20),
+    };
+  }
+}

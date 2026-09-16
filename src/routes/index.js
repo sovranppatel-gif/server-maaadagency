@@ -1,7 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { env } from "../config/env.js";
-import { getMongoDBError, connectDB } from "../config/db.js";
+import { getMongoDBError, connectDB, getMongoDBDiagnostic } from "../config/db.js";
 
 import authRoutes from "./auth.routes.js";
 import leadRoutes from "./lead.routes.js";
@@ -41,6 +41,8 @@ router.get("/health/db-diagnostic", async (_req, res) => {
     return res.status(404).json({ success: false, error: { message: "Not found" } });
   }
 
+  const uriDiagnostic = getMongoDBDiagnostic();
+
   try {
     await connectDB();
     const dbState = DB_STATES[mongoose.connection.readyState] ?? "unknown";
@@ -53,6 +55,7 @@ router.get("/health/db-diagnostic", async (_req, res) => {
         database: dbState,
         uptime: Math.round(process.uptime()),
         timestamp: new Date().toISOString(),
+        uriDiagnostic,
       },
     });
   } catch (err) {
@@ -68,6 +71,7 @@ router.get("/health/db-diagnostic", async (_req, res) => {
           code: err.code,
           type: err.name,
         },
+        uriDiagnostic,
       },
     });
   }
