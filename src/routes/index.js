@@ -1,7 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { env } from "../config/env.js";
-import { getMongoDBError } from "../config/db.js";
+import { getMongoDBError, connectDB } from "../config/db.js";
 
 import authRoutes from "./auth.routes.js";
 import leadRoutes from "./lead.routes.js";
@@ -36,34 +36,41 @@ router.get("/health", (_req, res) => {
 });
 
 /** Temporary diagnostic endpoint for MongoDB connection errors (requires MONGODB_DIAGNOSTIC=true). */
-router.get("/health/db-diagnostic", (_req, res) => {
+router.get("/health/db-diagnostic", async (_req, res) => {
   if (env.MONGODB_DIAGNOSTIC !== "true") {
     return res.status(404).json({ success: false, error: { message: "Not found" } });
   }
 
-  const dbState = DB_STATES[mongoose.connection.readyState] ?? "unknown";
-  const healthy = dbState === "connected";
-  const mongoError = getMongoDBError();
+  try {
+    await connectDB();
+    const dbState = DB_STATES[mongoose.connection.readyState] ?? "unknown";
+    const healthy = dbState === "connected";
 
-  const body = {
-    success: healthy,
-    data: {
-      status: healthy ? "ok" : "degraded",
-      database: dbState,
-      uptime: Math.round(process.uptime()),
-      timestamp: new Date().toISOString(),
-    },
-  };
-
-  if (mongoError) {
-    body.data.connectionError = {
-      message: mongoError.message,
-      code: mongoError.code,
-      type: mongoError.name,
-    };
+    return res.status(healthy ? 200 : 503).json({
+      success: healthy,
+      data: {
+        status: healthy ? "ok" : "degraded",
+        database: dbState,
+        uptime: Math.round(process.uptime()),
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    return res.status(503).json({
+      success: false,
+      data: {
+        status: "degraded",
+        database: "disconnected",
+        uptime: Math.round(process.uptime()),
+        timestamp: new Date().toISOString(),
+        connectionError: {
+          message: err.message,
+          code: err.code,
+          type: err.name,
+        },
+      },
+    });
   }
-
-  res.status(healthy ? 200 : 503).json(body);
 });
 
 router.use("/auth", authRoutes);
