@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { env, whatsappConfigured } from "../config/env.js";
+import { env, isProd, whatsappConfigured } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import { ApiError } from "../utils/ApiError.js";
 
@@ -95,7 +95,12 @@ export async function getMediaUrl(mediaId) {
  */
 export function verifyWebhookSignature(rawBody, signatureHeader) {
   if (!env.WHATSAPP_APP_SECRET) {
-    // No secret configured (local development): accept but make it visible.
+    // Production webhooks must never accept unsigned requests. Local dry-run
+    // development remains usable without configuring a Meta app secret.
+    if (isProd) {
+      logger.error("Webhook signature rejected: WHATSAPP_APP_SECRET is not set");
+      return false;
+    }
     logger.warn("Webhook signature not verified: WHATSAPP_APP_SECRET is not set");
     return true;
   }

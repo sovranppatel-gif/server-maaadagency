@@ -1,20 +1,10 @@
 import app from "./src/app.js";
 import { connectDB } from "./src/config/db.js";
 
-let databasePromise;
-
-function ensureDatabase() {
-  if (!databasePromise) {
-    databasePromise = connectDB().catch((error) => {
-      databasePromise = undefined;
-      throw error;
-    });
-  }
-  return databasePromise;
-}
-
 /** Vercel entrypoint. The local long-running server remains src/server.js. */
 export default async function handler(req, res) {
-  await ensureDatabase();
+  // connectDB caches a live pool, but checks Mongoose's state on every
+  // invocation so a function reconnects after a transient serverless drop.
+  await connectDB();
   return app(req, res);
 }

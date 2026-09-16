@@ -221,16 +221,14 @@ function extractContent(waMessage) {
 
 /**
  * POST /api/whatsapp/webhook
- * Always answers 200 quickly: Meta retries aggressively on any other status,
- * so processing failures are logged rather than surfaced.
+ * Critical persistence and bot work completes before acknowledging Meta. A
+ * failure reaches the error handler so Meta can retry instead of losing it.
  */
 export const receiveWebhook = asyncHandler(async (req, res) => {
   if (!verifyWebhookSignature(req.rawBody, req.get("x-hub-signature-256"))) {
     logger.warn("Rejected WhatsApp webhook with invalid signature");
     return res.status(401).send("Invalid signature");
   }
-
-  res.status(200).send("EVENT_RECEIVED");
 
   try {
     for (const entry of req.body?.entry ?? []) {
@@ -301,9 +299,10 @@ export const receiveWebhook = asyncHandler(async (req, res) => {
     }
   } catch (err) {
     logger.error("Failed to process WhatsApp webhook", { error: err.message, stack: err.stack });
+    throw err;
   }
 
-  return undefined;
+  return res.status(200).send("EVENT_RECEIVED");
 });
 
 /* ─ Bot flow management ─────────────────────────────────────────────────── */
