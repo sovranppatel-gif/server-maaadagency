@@ -70,16 +70,21 @@ async function resolveSrvToDirectUri(srvUri) {
 }
 
 export async function connectDB() {
-  console.log("Connecting to MongoDB...");
   const srvUri = env.mongoUri;
 
-  // Log connection attempt (sanitized)
+  if (!srvUri) {
+    throw new Error("❌ MONGO_URI environment variable is NOT SET!");
+  }
+
   const sanitizedUri = srvUri.replace(/:[^@]+@/, ":***@");
-  console.log(`[MongoDB] Using: ${sanitizedUri.slice(0, 80)}...`);
+  console.log("\n═══════════════════════════════════════════════════");
+  console.log("[MongoDB] Starting connection attempt...");
+  console.log("[MongoDB] URI Type:", srvUri.includes("+srv") ? "SRV" : "DIRECT");
+  console.log("[MongoDB] Sanitized URI:", sanitizedUri);
+  console.log("═══════════════════════════════════════════════════\n");
 
   const options = {
     autoIndex: true,
-    // Increased timeout for Vercel serverless cold starts
     serverSelectionTimeoutMS: Number(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS) || 30000,
     socketTimeoutMS: 45000,
     connectTimeoutMS: 30000,
@@ -88,32 +93,49 @@ export async function connectDB() {
   };
 
   if (!srvUri.startsWith("mongodb+srv://")) {
-    await mongoose.connect(srvUri, options);
-    const { host, name } = mongoose.connection;
-    console.log(`MongoDB connected: db="${name}" host="${host}"`);
-    return;
+    try {
+      await mongoose.connect(srvUri, options);
+      const { host, name } = mongoose.connection;
+      console.log(`✅ MongoDB connected: db="${name}" host="${host}"`);
+      return;
+    } catch (err) {
+      console.error("❌ Direct connection failed:", err.code, err.message);
+      throw err;
+    }
   }
 
   try {
+    console.log("[MongoDB] Attempting SRV connection (mongodb+srv://)...");
     await mongoose.connect(srvUri, options);
+    const { host, name } = mongoose.connection;
+    console.log(`✅ MongoDB connected via SRV: db="${name}" host="${host}"`);
+    return;
   } catch (err) {
+    console.error(`⚠️ SRV connection failed (${err.code}): ${err.message}`);
+
     const dnsFailure =
       err.code === "ECONNREFUSED" ||
       err.code === "ENOTFOUND" ||
       err.code === "ETIMEOUT" ||
       String(err.message || "").includes("querySrv");
 
-    if (!dnsFailure) throw err;
+    if (!dnsFailure) {
+      console.error("❌ Not a DNS error, cannot recover");
+      throw err;
+    }
 
-    console.warn(
-      `MongoDB SRV lookup failed (${err.code || err.message}); using direct host list`
-    );
-    const directUri = await resolveSrvToDirectUri(srvUri);
-    await mongoose.connect(directUri, options);
+    console.log("[MongoDB] Trying fallback: direct host list...");
+    try {
+      const directUri = await resolveSrvToDirectUri(srvUri);
+      await mongoose.connect(directUri, options);
+      const { host, name } = mongoose.connection;
+      console.log(`✅ MongoDB connected via fallback: db="${name}" host="${host}"`);
+      return;
+    } catch (directErr) {
+      console.error("❌ Direct host connection failed:", directErr.message);
+      throw directErr;
+    }
   }
-
-  const { host, name } = mongoose.connection;
-  console.log(`MongoDB connected: db="${name}" host="${host}"`);
 }
 
 export async function disconnectDB() {

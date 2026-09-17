@@ -13,6 +13,7 @@ import { errorHandler, notFound } from "./middleware/error.js";
 import { sanitizeRequest } from "./middleware/sanitize.js";
 import { apiLimiter } from "./middleware/rateLimit.js";
 import { dbHealthMiddleware } from "./middleware/dbHealth.js";
+import { connectDB } from "./config/db.js";
 
 export function createApp() {
   const app = express();
@@ -89,4 +90,44 @@ export function createApp() {
 // Vercel can use this Express application directly as a serverless handler.
 // The local entrypoint still calls createApp() and owns app.listen().
 const app = createApp();
+
+// Initialize MongoDB connection for both local and Vercel serverless environments
+let mongoConnecting = false;
+let mongoConnected = false;
+
+async function initMongoDB() {
+  if (mongoConnected || mongoConnecting) return;
+
+  mongoConnecting = true;
+  console.log("\n🔄 [App Init] Starting MongoDB connection...");
+
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    try {
+      await connectDB();
+      mongoConnected = true;
+      mongoConnecting = false;
+      console.log("✅ [App Init] MongoDB connected successfully\n");
+      return;
+    } catch (err) {
+      console.error(
+        `⚠️ [App Init] Attempt ${attempt}/10 failed:`,
+        err?.message || err
+      );
+
+      if (attempt < 10) {
+        const delay = Math.min(1000 * attempt, 5000);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  mongoConnecting = false;
+  console.error("\n❌ [App Init] Failed to connect MongoDB after 10 attempts\n");
+}
+
+// Start MongoDB connection attempt immediately when app loads
+initMongoDB().catch((err) => {
+  console.error("[App Init] MongoDB initialization error (non-fatal):", err?.message);
+});
+
 export default app;
