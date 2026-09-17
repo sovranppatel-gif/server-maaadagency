@@ -1,17 +1,8 @@
 {
   "version": 2,
-  "buildCommand": "npm install",
   "functions": {
     "api/index.js": {
-      "maxDuration": 60,
-      "memory": 1024,
-      "runtime": "nodejs20.x"
+      "maxDuration": 60
     }
-  },
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.js"
-    }
-  ]
+  }
 }
