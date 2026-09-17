@@ -1,14 +1,12 @@
 import { createApp } from "../src/app.js";
+import { connectDB } from "../src/config/db.js";
+import mongoose from "mongoose";
 
 const app = createApp();
 
-// Temporary test route to verify Vercel routing works
-app.get("/api/vercel-test", (_req, res) => {
-  res.json({
-    status: "VERCEL DEPLOYMENT WORKING",
-    timestamp: new Date().toISOString(),
-    message: "If you see this, Vercel function is being invoked correctly"
-  });
-});
-
-export default app;
+export default async function handler(req, res) {
+  if (mongoose.connection.readyState !== 1) {
+    await connectDB();
+  }
+  return app(req, res);
+}
