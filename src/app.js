@@ -72,16 +72,7 @@ export function createApp() {
     })
   );
 
-  app.use("/api", apiLimiter, dbHealthMiddleware, routes);
-
-  app.get("/api/vercel-test", (_req, res) =>
-    res.json({
-      success: true,
-      message: "Vercel function routing is working"
-    })
-  );
-
-  // Temporary diagnostic endpoint for WhatsApp env variable verification
+  // Temporary diagnostic endpoint for WhatsApp env variable verification (BEFORE /api mount)
   app.get("/api/whatsapp/diagnostic", (_req, res) =>
     res.json({
       whatsappVerifyTokenExists: Boolean(env.whatsappVerifyToken),
@@ -90,6 +81,15 @@ export function createApp() {
       whatsappAccessTokenExists: Boolean(env.whatsappAccessToken),
       whatsappAppSecretExists: Boolean(env.whatsappAppSecret),
       whatsappDryRun: env.whatsappDryRun,
+    })
+  );
+
+  app.use("/api", apiLimiter, dbHealthMiddleware, routes);
+
+  app.get("/api/vercel-test", (_req, res) =>
+    res.json({
+      success: true,
+      message: "Vercel function routing is working"
     })
   );
 
