@@ -72,18 +72,6 @@ export function createApp() {
     })
   );
 
-  // Temporary diagnostic endpoint for WhatsApp env variable verification (BEFORE /api mount)
-  app.get("/api/whatsapp/diagnostic", (_req, res) =>
-    res.json({
-      whatsappVerifyTokenExists: Boolean(env.whatsappVerifyToken),
-      whatsappVerifyTokenLength: env.whatsappVerifyToken?.length || 0,
-      whatsappPhoneNumberIdExists: Boolean(env.whatsappPhoneNumberId),
-      whatsappAccessTokenExists: Boolean(env.whatsappAccessToken),
-      whatsappAppSecretExists: Boolean(env.whatsappAppSecret),
-      whatsappDryRun: env.whatsappDryRun,
-    })
-  );
-
   app.use("/api", apiLimiter, dbHealthMiddleware, routes);
 
   app.get("/api/vercel-test", (_req, res) =>

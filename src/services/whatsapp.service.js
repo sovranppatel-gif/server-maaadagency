@@ -112,7 +112,9 @@ export function verifyWebhookSignature(rawBody, signatureHeader) {
 
 /** Answers Meta's GET verification handshake. */
 export function verifySubscription({ mode, token, challenge }) {
-  if (mode === "subscribe" && token && token === env.whatsappVerifyToken) return challenge;
+  const normalizedToken = token ? String(token).trim() : "";
+  const normalizedEnvToken = env.whatsappVerifyToken ? String(env.whatsappVerifyToken).trim() : "";
+  if (mode === "subscribe" && normalizedToken && normalizedToken === normalizedEnvToken) return challenge;
   return null;
 }
 
