@@ -1,6 +1,17 @@
 {
   "version": 2,
-  "env": {
-    "NODE_ENV": "production"
-  }
+  "buildCommand": "npm install",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60,
+      "memory": 1024,
+      "runtime": "nodejs20.x"
+    }
+  },
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.js"
+    }
+  ]
 }
