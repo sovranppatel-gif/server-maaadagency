@@ -93,3 +93,6 @@ export function createApp() {
 
   return app;
 }
+
+// Create default instance for local development (src/server.js)
+export default createApp();
