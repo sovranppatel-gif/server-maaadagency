@@ -1,15 +1,9 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/node"
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60,
+      "memory": 1024
     }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "src/app.js"
-    }
-  ]
+  }
 }
