@@ -12,6 +12,7 @@ import routes from "./routes/index.js";
 import { errorHandler, notFound } from "./middleware/error.js";
 import { sanitizeRequest } from "./middleware/sanitize.js";
 import { apiLimiter } from "./middleware/rateLimit.js";
+import { dbHealthMiddleware } from "./middleware/dbHealth.js";
 
 export function createApp() {
   const app = express();
@@ -70,7 +71,7 @@ export function createApp() {
     })
   );
 
-  app.use("/api", apiLimiter, routes);
+  app.use("/api", apiLimiter, dbHealthMiddleware, routes);
 
   app.get("/", (_req, res) =>
     res.json({

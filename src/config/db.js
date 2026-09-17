@@ -72,9 +72,19 @@ async function resolveSrvToDirectUri(srvUri) {
 export async function connectDB() {
   console.log("Connecting to MongoDB...");
   const srvUri = env.mongoUri;
+
+  // Log connection attempt (sanitized)
+  const sanitizedUri = srvUri.replace(/:[^@]+@/, ":***@");
+  console.log(`[MongoDB] Using: ${sanitizedUri.slice(0, 80)}...`);
+
   const options = {
     autoIndex: true,
-    serverSelectionTimeoutMS: Number(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS) || 8000,
+    // Increased timeout for Vercel serverless cold starts
+    serverSelectionTimeoutMS: Number(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS) || 30000,
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 30000,
+    maxPoolSize: 5,
+    minPoolSize: 1,
   };
 
   if (!srvUri.startsWith("mongodb+srv://")) {
