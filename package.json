@@ -5,14 +5,18 @@
   "description": "Maa Ad Agency — Master Admin backend (Node + Express + MongoDB + WhatsApp Business API)",
   "type": "module",
   "main": "src/server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "node --watch --env-file=.env src/server.js",
     "start": "node --env-file=.env src/server.js",
     "seed": "node --env-file=.env src/seed/seed.js",
-    "seed:fresh": "node --env-file=.env src/seed/seed.js --fresh"
+    "seed:fresh": "node --env-file=.env src/seed/seed.js --fresh",
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "bcryptjs": "^3.0.2",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",

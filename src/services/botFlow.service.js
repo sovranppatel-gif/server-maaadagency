@@ -9,28 +9,41 @@ import { recalcClientStats } from "./stats.service.js";
 import { emitEvent } from "../config/socket.js";
 import { logger } from "../config/logger.js";
 
+/** Active steps in flow order: the single source of truth for the flow. */
+export function getActiveSteps() {
+  return BotStep.find({ active: true }).sort({ order: 1 }).lean();
+}
+
 /** Renders a step message, appending numbered options when present. */
-function renderStep(step) {
+export function renderStep(step) {
   if (!step.options?.length) return step.message;
   const list = step.options.map((o, i) => `${i + 1}. ${o.label}`).join("\n");
   return `${step.message}\n\n${list}`;
 }
 
-/** Maps "2" or "web application" onto the matching option label. */
-function resolveAnswer(step, rawAnswer) {
+/**
+ * Exact option match: "2" or "web application" -> the option label.
+ * Returns null when the step has no options or nothing matches.
+ */
+export function matchOption(step, rawAnswer) {
+  if (!step.options?.length) return null;
   const answer = String(rawAnswer ?? "").trim();
-  if (!step.options?.length) return answer;
 
   const index = Number.parseInt(answer, 10);
   if (Number.isInteger(index) && index >= 1 && index <= step.options.length) {
     return step.options[index - 1].label;
   }
   const match = step.options.find((o) => o.label.toLowerCase() === answer.toLowerCase());
-  return match ? match.label : answer;
+  return match ? match.label : null;
+}
+
+/** Maps "2" or "web application" onto the matching option label. */
+function resolveAnswer(step, rawAnswer) {
+  return matchOption(step, rawAnswer) ?? String(rawAnswer ?? "").trim();
 }
 
 /** Persists an outbound bot message and ships it to WhatsApp. */
-async function sendBotMessage(conversation, text) {
+export async function sendBotMessage(conversation, text) {
   const result = await sendTextMessage(conversation.phone, text).catch((err) => {
     logger.error("Bot message send failed", { error: err.message, phone: conversation.phone });
     return { messageId: null, failed: true };
@@ -56,7 +69,7 @@ async function sendBotMessage(conversation, text) {
 
 /** Sends the opening question when a brand-new conversation starts. */
 export async function startBotFlow(conversation) {
-  const steps = await BotStep.find({ active: true }).sort({ order: 1 }).lean();
+  const steps = await getActiveSteps();
   if (!steps.length) return null;
 
   conversation.bot = { active: true, stepIndex: 0, collected: {}, startedAt: new Date() };
@@ -68,11 +81,15 @@ export async function startBotFlow(conversation) {
 /**
  * Advances the intake flow by one inbound answer.
  * Returns the created lead once the final step is answered.
+ *
+ * The smart bot may pass an already-interpreted `answer` for the current step
+ * and `prefill` values for later steps; without them the raw text is
+ * resolved exactly as before.
  */
-export async function advanceBotFlow(conversation, inboundText) {
+export async function advanceBotFlow(conversation, inboundText, { answer, prefill } = {}) {
   if (!conversation.bot?.active) return null;
 
-  const steps = await BotStep.find({ active: true }).sort({ order: 1 }).lean();
+  const steps = await getActiveSteps();
   if (!steps.length) return null;
 
   const currentIndex = conversation.bot.stepIndex ?? 0;
@@ -82,13 +99,18 @@ export async function advanceBotFlow(conversation, inboundText) {
   // Record the answer to the question we just asked.
   const collected = { ...(conversation.bot.collected ?? {}) };
   if (currentStep.collectsField) {
-    collected[currentStep.collectsField] = resolveAnswer(currentStep, inboundText);
+    collected[currentStep.collectsField] = answer ?? resolveAnswer(currentStep, inboundText);
   }
+
+  const prefilled =
+    prefill && Object.keys(prefill).length
+      ? { ...(conversation.bot.prefilled ?? {}), ...prefill }
+      : conversation.bot.prefilled;
 
   const nextIndex = currentIndex + 1;
   const nextStep = steps[nextIndex];
 
-  conversation.bot = { ...conversation.bot, stepIndex: nextIndex, collected };
+  conversation.bot = { ...conversation.bot, stepIndex: nextIndex, collected, ...(prefilled ? { prefilled } : {}) };
 
   if (nextStep) {
     await sendBotMessage(conversation, renderStep(nextStep));
@@ -104,8 +126,10 @@ export async function advanceBotFlow(conversation, inboundText) {
 }
 
 /** Converts the collected answers into a Lead and hands over to the team. */
-async function completeBotFlow(conversation, collected) {
-  conversation.bot = { ...conversation.bot, active: false, completedAt: new Date(), collected };
+async function completeBotFlow(conversation, answers) {
+  conversation.bot = { ...conversation.bot, active: false, completedAt: new Date(), collected: answers };
+  // Volunteered answers only fill fields the flow itself did not collect.
+  const collected = { ...(conversation.bot.prefilled ?? {}), ...answers };
 
   const client = await Client.findById(conversation.clientId);
   if (client) {

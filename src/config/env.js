@@ -30,7 +30,22 @@ export const env = {
 
   uploadDir: process.env.UPLOAD_DIR || "uploads",
   maxUploadMb: Number(process.env.MAX_UPLOAD_MB) || 15,
+
+  // Smart auto-reply. AI_ENABLED=false keeps the purely rule-based bot.
+  aiEnabled: String(process.env.AI_ENABLED || "false").toLowerCase() === "true",
+  aiProvider: (process.env.AI_PROVIDER || "anthropic").toLowerCase().trim(),
+  aiApiKey: process.env.AI_API_KEY || "",
+  aiModel: process.env.AI_MODEL || "claude-opus-5",
+  aiEffort: process.env.AI_EFFORT ?? "low",
+  aiConfidenceThreshold: clampUnit(process.env.AI_CONFIDENCE_THRESHOLD, 0.75),
+  aiContextMessages: Math.max(1, Number(process.env.AI_CONTEXT_MESSAGES) || 10),
+  aiTimeoutMs: Math.max(1000, Number(process.env.AI_TIMEOUT_MS) || 8000),
 };
+
+function clampUnit(raw, fallback) {
+  const n = Number(raw);
+  return raw !== undefined && raw !== "" && Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
+}
 
 export const isProd = env.nodeEnv === "production";
 export const isDev = env.nodeEnv === "development";

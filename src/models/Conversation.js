@@ -21,12 +21,20 @@ const conversationSchema = new mongoose.Schema(
     assignedEmployeeId: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     leadId: { type: mongoose.Schema.Types.ObjectId, ref: "Lead" },
 
+    // Set when the customer asks for a person: the bot stays paused and the
+    // thread waits for an agent.
+    humanHandoff: { type: Boolean, default: false, index: true },
+    handoffAt: Date,
+
     // Bot conversation state machine: which step we are on and what has been
     // collected so far. Cleared once the flow produces a lead.
     bot: {
       active: { type: Boolean, default: true },
       stepIndex: { type: Number, default: 0 },
       collected: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+      // Answers the customer volunteered ahead of their step (smart bot).
+      // Steps are never skipped; these only fill gaps when the lead is built.
+      prefilled: { type: mongoose.Schema.Types.Mixed, default: undefined },
       startedAt: Date,
       completedAt: Date,
     },

@@ -3,9 +3,10 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendSuccess } from "../utils/apiResponse.js";
 import { env } from "../config/env.js";
 import { getConnectionStatus, maskSecret, sendTextMessage } from "../services/whatsapp.service.js";
+import { AI_KEY, GENERAL_KEY, getAiConfig, loadGeneralSettings } from "../services/settings.service.js";
+import { aiProviderStatus } from "../services/aiReply.service.js";
 
 const WHATSAPP_KEY = "whatsapp.config";
-const GENERAL_KEY = "general.config";
 
 /**
  * GET /api/settings/whatsapp
@@ -85,15 +86,7 @@ export const testWhatsAppConnection = asyncHandler(async (req, res) => {
 });
 
 /** GET /api/settings/general */
-export const getGeneralSettings = asyncHandler(async (_req, res) => {
-  const stored = (await Setting.get(GENERAL_KEY)) ?? {};
-  return sendSuccess(res, {
-    agencyName: stored.agencyName ?? "Maa Ad Agency",
-    supportEmail: stored.supportEmail ?? "info@maaadagency.com",
-    supportPhone: stored.supportPhone ?? "+91 79743 51591",
-    timezone: stored.timezone ?? "Asia/Kolkata",
-  });
-});
+export const getGeneralSettings = asyncHandler(async (_req, res) => sendSuccess(res, await loadGeneralSettings()));
 
 /** PATCH /api/settings/general */
 export const updateGeneralSettings = asyncHandler(async (req, res) => {
@@ -101,4 +94,21 @@ export const updateGeneralSettings = asyncHandler(async (req, res) => {
   const next = { ...current, ...req.body };
   await Setting.put(GENERAL_KEY, next, req.user?._id);
   return sendSuccess(res, next);
+});
+
+/**
+ * GET /api/settings/ai
+ * Provider credentials stay in the environment; only their presence is shown.
+ */
+export const getAiSettings = asyncHandler(async (_req, res) => {
+  const config = await getAiConfig();
+  return sendSuccess(res, { ...config, ...aiProviderStatus() });
+});
+
+/** PATCH /api/settings/ai — runtime toggles; cannot override AI_ENABLED=false. */
+export const updateAiSettings = asyncHandler(async (req, res) => {
+  const current = (await Setting.get(AI_KEY)) ?? {};
+  await Setting.put(AI_KEY, { ...current, ...req.body }, req.user?._id);
+  const config = await getAiConfig();
+  return sendSuccess(res, { ...config, ...aiProviderStatus() });
 });

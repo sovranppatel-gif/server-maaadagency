@@ -1,3 +1,5 @@
+// whatsapp.service.js
+
 import crypto from "node:crypto";
 import { env, isProd, whatsappConfigured } from "../config/env.js";
 import { logger } from "../config/logger.js";

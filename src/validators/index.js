@@ -238,6 +238,14 @@ export const whatsappSchemas = {
     active: z.boolean().optional(),
   }),
   reorder: z.object({ ids: z.array(objectIdish).min(1) }),
+  faq: z.object({
+    question: z.string().trim().min(3).max(500),
+    answer: z.string().trim().min(1).max(2000),
+    keywords: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
+    category: z.string().trim().max(60).optional(),
+    active: z.boolean().optional(),
+    order: z.coerce.number().int().min(0).optional(),
+  }),
 };
 
 /* Settings ----------------------------------------------------------------- */
@@ -252,5 +260,10 @@ export const settingsSchemas = {
     supportEmail: z.string().email().optional(),
     supportPhone: z.string().optional(),
     timezone: z.string().optional(),
+  }),
+  ai: z.object({
+    enabled: z.boolean().optional(),
+    confidenceThreshold: z.number().min(0).max(1).optional(),
+    contextMessages: z.number().int().min(1).max(30).optional(),
   }),
 };

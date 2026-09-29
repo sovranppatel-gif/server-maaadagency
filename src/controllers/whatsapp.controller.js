@@ -17,7 +17,8 @@ import {
   verifySubscription,
   verifyWebhookSignature,
 } from "../services/whatsapp.service.js";
-import { advanceBotFlow, pauseBotFlow, startBotFlow } from "../services/botFlow.service.js";
+import { pauseBotFlow, startBotFlow } from "../services/botFlow.service.js";
+import { handleInboundText } from "../services/smartBot.service.js";
 import { withLock } from "../utils/mutex.js";
 
 const presentConversation = (doc) => ({
@@ -287,11 +288,12 @@ export const receiveWebhook = asyncHandler(async (req, res) => {
 
           await markMessageRead(waMessage.id).catch(() => null);
 
-          // 3. Drive the intake bot.
+          // 3. Drive the intake bot. The smart layer falls back to the
+          // rule-based flow on its own, so AI trouble never fails the webhook.
           if (isNew) {
             await startBotFlow(conversation);
           } else if (content.messageType === "text" && content.message) {
-            await advanceBotFlow(conversation, content.message);
+            await handleInboundText(conversation, content.message);
           }
           });
         }

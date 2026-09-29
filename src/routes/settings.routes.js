@@ -16,4 +16,7 @@ router.get("/whatsapp", ctrl.getWhatsAppSettings);
 router.patch("/whatsapp", validate({ body: settingsSchemas.whatsapp }), ctrl.updateWhatsAppSettings);
 router.post("/whatsapp/test", ctrl.testWhatsAppConnection);
 
+router.get("/ai", ctrl.getAiSettings);
+router.patch("/ai", validate({ body: settingsSchemas.ai }), ctrl.updateAiSettings);
+
 export default router;
