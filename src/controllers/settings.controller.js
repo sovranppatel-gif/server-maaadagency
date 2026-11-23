@@ -3,10 +3,16 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendSuccess } from "../utils/apiResponse.js";
 import { env } from "../config/env.js";
 import { getConnectionStatus, maskSecret, sendTextMessage } from "../services/whatsapp.service.js";
-import { AI_KEY, GENERAL_KEY, getAiConfig, loadGeneralSettings } from "../services/settings.service.js";
+import {
+  AI_KEY,
+  AUTO_LEAD_CREATION_KEY,
+  GENERAL_KEY,
+  WHATSAPP_KEY,
+  getAiConfig,
+  getAutoLeadCreationEnabled,
+  loadGeneralSettings,
+} from "../services/settings.service.js";
 import { aiProviderStatus } from "../services/aiReply.service.js";
-
-const WHATSAPP_KEY = "whatsapp.config";
 
 /**
  * GET /api/settings/whatsapp
@@ -14,7 +20,11 @@ const WHATSAPP_KEY = "whatsapp.config";
  * settings screen can show configuration state without ever exposing a token.
  */
 export const getWhatsAppSettings = asyncHandler(async (_req, res) => {
-  const stored = (await Setting.get(WHATSAPP_KEY)) ?? {};
+  const [storedValue, autoLeadCreationEnabled] = await Promise.all([
+    Setting.get(WHATSAPP_KEY),
+    getAutoLeadCreationEnabled(),
+  ]);
+  const stored = storedValue ?? {};
   const status = getConnectionStatus();
 
   return sendSuccess(res, {
@@ -24,6 +34,7 @@ export const getWhatsAppSettings = asyncHandler(async (_req, res) => {
     accessToken: maskSecret(env.WHATSAPP_ACCESS_TOKEN),
     webhookVerifyToken: maskSecret(env.WHATSAPP_VERIFY_TOKEN),
     webhookUrl: stored.webhookUrl || `${env.CLIENT_ORIGIN.replace(/\/$/, "")}/api/whatsapp/webhook`,
+    autoLeadCreationEnabled,
     connected: status.connected,
     dryRun: status.dryRun,
     apiVersion: status.apiVersion,
@@ -42,7 +53,7 @@ export const getWhatsAppSettings = asyncHandler(async (_req, res) => {
  * the deployment environment, never through the API.
  */
 export const updateWhatsAppSettings = asyncHandler(async (req, res) => {
-  const { businessAccountId, phoneNumberId, webhookUrl } = req.body;
+  const { businessAccountId, phoneNumberId, webhookUrl, autoLeadCreationEnabled } = req.body;
 
   const current = (await Setting.get(WHATSAPP_KEY)) ?? {};
   const next = {
@@ -53,7 +64,14 @@ export const updateWhatsAppSettings = asyncHandler(async (req, res) => {
   };
 
   await Setting.put(WHATSAPP_KEY, next, req.user?._id);
-  return sendSuccess(res, { ...next, message: "Configuration saved. Credentials are managed via environment variables." });
+  if (autoLeadCreationEnabled !== undefined) {
+    await Setting.put(AUTO_LEAD_CREATION_KEY, autoLeadCreationEnabled, req.user?._id);
+  }
+  return sendSuccess(res, {
+    ...next,
+    autoLeadCreationEnabled: await getAutoLeadCreationEnabled(),
+    message: "Configuration saved. Credentials are managed via environment variables.",
+  });
 });
 
 /** POST /api/settings/whatsapp/test — verifies credentials against Meta. */

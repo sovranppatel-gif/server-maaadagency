@@ -7,6 +7,7 @@ import { q } from "../middleware/validate.js";
 
 /** Notifications addressed to this user plus agency-wide broadcasts. */
 function audienceFilter(req) {
+  if (req.user?.role === "EMPLOYEE") return { userId: req.user._id };
   return { $or: [{ userId: null }, { userId: req.user?._id }] };
 }
 

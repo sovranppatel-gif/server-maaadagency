@@ -6,7 +6,7 @@ import { clientSchemas, idParam } from "../validators/index.js";
 
 const router = Router();
 
-router.use(protect);
+router.use(protect, authorize("ADMIN"));
 
 router.get("/", validate({ query: clientSchemas.list }), ctrl.listClients);
 router.get("/:id", validate({ params: idParam }), ctrl.getClient);

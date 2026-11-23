@@ -3,6 +3,19 @@ import { env } from "../config/env.js";
 
 export const GENERAL_KEY = "general.config";
 export const AI_KEY = "ai.config";
+export const WHATSAPP_KEY = "whatsapp.config";
+export const AUTO_LEAD_CREATION_KEY = "whatsapp.autoLeadCreationEnabled";
+
+/** Missing settings deliberately default to off, including on legacy installs. */
+export async function getAutoLeadCreationEnabled() {
+  const savedFlag = await Setting.get(AUTO_LEAD_CREATION_KEY, null);
+  if (typeof savedFlag === "boolean") return savedFlag;
+
+  const existingConfig = await Setting.get(WHATSAPP_KEY, null);
+  return typeof existingConfig?.autoLeadCreationEnabled === "boolean"
+    ? existingConfig.autoLeadCreationEnabled
+    : false;
+}
 
 /** Business details shown in settings and shared with the smart bot. */
 export async function loadGeneralSettings() {

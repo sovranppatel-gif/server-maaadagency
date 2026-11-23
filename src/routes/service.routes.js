@@ -6,7 +6,7 @@ import { idParam, serviceSchemas } from "../validators/index.js";
 
 const router = Router();
 
-router.use(protect);
+router.use(protect, authorize("ADMIN"));
 
 router.get("/", ctrl.listServices);
 router.post("/", authorize("ADMIN"), validate({ body: serviceSchemas.create }), ctrl.createService);

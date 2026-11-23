@@ -12,9 +12,12 @@ const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
-    passwordHash: { type: String, required: true, select: false },
+    passwordHash: { type: String, select: false },
     role: { type: String, enum: ROLES, default: "EMPLOYEE", index: true },
     employee: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    credentialSetupTokenHash: { type: String, select: false },
+    credentialSetupExpiresAt: { type: Date, select: false },
+    credentialSetupPurpose: { type: String, enum: ["INVITATION", "PASSWORD_RESET"], select: false },
     avatarColor: { type: String, default: "#C5161D" },
     isActive: { type: Boolean, default: true },
     lastLoginAt: Date,

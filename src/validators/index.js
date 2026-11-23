@@ -2,18 +2,26 @@ import { z } from "zod";
 import {
   AVAILABILITY,
   CONVERSATION_STATUSES,
+  EMPLOYEE_DEPARTMENTS,
+  EMPLOYMENT_TYPES,
   FILE_CATEGORIES,
   LEAD_SOURCES,
   LEAD_STATUSES,
   NOTIFICATION_CATEGORIES,
   PRIORITIES,
   PROJECT_STATUSES,
-  ROLES,
   WORK_STATUSES,
 } from "../models/common.js";
 
 const objectIdish = z.string().min(1);
 const optionalDate = z.union([z.string(), z.date()]).optional();
+const phoneInput = z
+  .string()
+  .trim()
+  .min(6, "A valid phone number is required")
+  .max(30, "Phone number is too long")
+  .refine((value) => value.replace(/\D/g, "").length >= 6, "A valid phone number is required");
+const optionalPhoneInput = z.union([phoneInput, z.literal("")]).optional();
 
 export const paginationQuery = z.object({
   page: z.coerce.number().int().positive().optional(),
@@ -34,8 +42,11 @@ export const authSchemas = {
     name: z.string().min(2),
     email: z.string().email(),
     password: z.string().min(8, "Password must be at least 8 characters"),
-    role: z.enum(ROLES).default("EMPLOYEE"),
-    employeeId: objectIdish.optional(),
+    role: z.literal("ADMIN").default("ADMIN"),
+  }),
+  employeeSetup: z.object({
+    token: z.string().min(32).max(128).regex(/^[A-Za-z0-9_-]+$/),
+    password: z.string().min(12, "Password must be at least 12 characters").max(128),
   }),
   changePassword: z.object({
     currentPassword: z.string().min(1),
@@ -54,26 +65,38 @@ export const leadSchemas = {
   }),
   create: z.object({
     clientId: objectIdish.optional(),
-    clientName: z.string().min(1).optional(),
-    phone: z.string().min(6, "A contact number is required"),
-    company: z.string().optional(),
-    email: z.string().email().optional().or(z.literal("")),
-    service: z.string().min(1, "Service is required"),
-    requirement: z.string().min(1, "Requirement is required"),
-    description: z.string().optional().default(""),
+    clientName: z.string().trim().min(1).max(160).optional(),
+    contactPersonName: z.string().trim().max(120).optional(),
+    phone: phoneInput,
+    alternatePhone: optionalPhoneInput,
+    company: z.string().trim().max(160).optional(),
+    email: z.string().email().max(254).optional().or(z.literal("")),
+    service: z.string().trim().min(1, "Service is required").max(120),
+    requirement: z.string().trim().min(1, "Requirement is required").max(5000),
+    description: z.string().max(5000).optional().default(""),
+    quantitySizeDimensions: z.string().trim().max(300).optional(),
+    internalRemarks: z.string().trim().max(2000).optional(),
     referenceWebsite: z.string().optional(),
     deadline: optionalDate,
-    budget: z.string().optional(),
+    enquiryDate: optionalDate,
+    budget: z.string().trim().max(50).optional(),
     source: z.enum(LEAD_SOURCES).default("Manual"),
     priority: z.enum(PRIORITIES).default("MEDIUM"),
+    assignedEmployeeId: objectIdish.optional().or(z.literal("")),
   }),
   update: z.object({
-    requirement: z.string().min(1).optional(),
-    description: z.string().optional(),
-    service: z.string().optional(),
+    contactPersonName: z.string().trim().max(120).optional(),
+    alternatePhone: optionalPhoneInput,
+    requirement: z.string().trim().min(1).max(5000).optional(),
+    description: z.string().max(5000).optional(),
+    quantitySizeDimensions: z.string().trim().max(300).optional(),
+    internalRemarks: z.string().trim().max(2000).optional(),
+    service: z.string().trim().max(120).optional(),
     referenceWebsite: z.string().optional(),
     deadline: optionalDate,
-    budget: z.string().optional(),
+    enquiryDate: optionalDate,
+    budget: z.string().trim().max(50).optional(),
+    source: z.enum(LEAD_SOURCES).optional(),
     priority: z.enum(PRIORITIES).optional(),
     status: z.enum(LEAD_STATUSES).optional(),
     company: z.string().optional(),
@@ -125,26 +148,46 @@ export const workSchemas = {
 
 /* Employees and clients --------------------------------------------------- */
 export const employeeSchemas = {
-  list: paginationQuery.extend({ availability: z.enum([...AVAILABILITY, "All"]).optional() }),
+  list: paginationQuery.extend({
+    availability: z.enum([...AVAILABILITY, "All"]).optional(),
+    status: z.enum(["Active", "Inactive", "All"]).optional(),
+    department: z.enum([...EMPLOYEE_DEPARTMENTS, "All"]).optional(),
+    includeInactive: z.enum(["true", "false"]).optional(),
+  }),
   create: z.object({
-    name: z.string().min(2),
-    role: z.string().min(2, "Job title is required"),
-    email: z.string().email(),
-    phone: z.string().min(6),
+    name: z.string().trim().min(2).max(160),
+    role: z.string().trim().min(2, "Designation is required").max(120),
+    email: z.string().trim().email().max(254),
+    phone: phoneInput,
+    alternatePhone: optionalPhoneInput,
+    department: z.enum(EMPLOYEE_DEPARTMENTS).optional(),
+    employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
+    address: z.string().trim().max(300).optional(),
+    city: z.string().trim().max(120).optional(),
+    reportingManager: objectIdish.optional().or(z.literal("")),
     availability: z.enum(AVAILABILITY).default("Available"),
     skills: z.array(z.string()).default([]),
     joinedAt: optionalDate,
-    createLogin: z.boolean().default(false),
-    password: z.string().min(8).optional(),
+    isActive: z.boolean().default(true),
+    createLogin: z.literal(false).optional(),
+    password: z.never().optional(),
   }),
   update: z.object({
-    name: z.string().min(2).optional(),
-    role: z.string().min(2).optional(),
-    phone: z.string().min(6).optional(),
+    name: z.string().trim().min(2).max(160).optional(),
+    role: z.string().trim().min(2).max(120).optional(),
+    email: z.string().trim().email().max(254).optional(),
+    phone: phoneInput.optional(),
+    alternatePhone: optionalPhoneInput,
+    department: z.enum(EMPLOYEE_DEPARTMENTS).optional(),
+    employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
+    address: z.string().trim().max(300).optional(),
+    city: z.string().trim().max(120).optional(),
+    reportingManager: objectIdish.optional().or(z.literal("")),
     availability: z.enum(AVAILABILITY).optional(),
     skills: z.array(z.string()).optional(),
     isActive: z.boolean().optional(),
   }),
+  access: z.object({ enabled: z.boolean() }),
 };
 
 export const clientSchemas = {
@@ -254,6 +297,7 @@ export const settingsSchemas = {
     businessAccountId: z.string().optional(),
     phoneNumberId: z.string().optional(),
     webhookUrl: z.string().url().optional().or(z.literal("")),
+    autoLeadCreationEnabled: z.boolean().optional(),
   }),
   general: z.object({
     agencyName: z.string().min(2).optional(),

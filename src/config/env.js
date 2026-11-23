@@ -18,7 +18,6 @@ export const env = {
 
   seedAdminEmail: (process.env.SEED_ADMIN_EMAIL || "admin@maaadagency.com").toLowerCase().trim(),
   seedAdminPassword: process.env.SEED_ADMIN_PASSWORD || "Admin@12345",
-  seedEmployeePassword: process.env.SEED_EMPLOYEE_PASSWORD || "Employee@12345",
 
   whatsappApiVersion: process.env.WHATSAPP_API_VERSION || "v21.0",
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || "",

@@ -17,7 +17,7 @@ const router = Router();
 router.get("/webhook", ctrl.verifyWebhook);
 router.post("/webhook", ctrl.receiveWebhook);
 
-router.use(protect);
+router.use(protect, authorize("ADMIN"));
 
 router.get("/status", ctrl.connectionStatus);
 

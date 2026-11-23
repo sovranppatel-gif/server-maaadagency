@@ -9,6 +9,7 @@ const router = Router();
 
 router.post("/login", authLimiter, validate({ body: authSchemas.login }), ctrl.login);
 router.post("/refresh", authLimiter, ctrl.refresh);
+router.post("/employee-setup", authLimiter, validate({ body: authSchemas.employeeSetup }), ctrl.completeEmployeeCredentialSetup);
 router.post("/logout", ctrl.logout);
 
 router.get("/me", protect, ctrl.me);

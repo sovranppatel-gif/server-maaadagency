@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { toJSONPlugin, codePlugin } from "./plugins.js";
-import { AVAILABILITY } from "./common.js";
+import { AVAILABILITY, EMPLOYEE_DEPARTMENTS, EMPLOYMENT_TYPES } from "./common.js";
 
 const employeeSchema = new mongoose.Schema(
   {
@@ -9,6 +9,13 @@ const employeeSchema = new mongoose.Schema(
     role: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     phone: { type: String, required: true, trim: true },
+    alternatePhone: { type: String, trim: true },
+    department: { type: String, enum: EMPLOYEE_DEPARTMENTS },
+    employmentType: { type: String, enum: EMPLOYMENT_TYPES },
+    address: { type: String, trim: true },
+    city: { type: String, trim: true },
+    reportingManager: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    loginAccountId: { type: mongoose.Schema.Types.ObjectId, select: false },
     avatarColor: { type: String, default: "#C5161D" },
     availability: { type: String, enum: AVAILABILITY, default: "Available", index: true },
     skills: { type: [String], default: [] },

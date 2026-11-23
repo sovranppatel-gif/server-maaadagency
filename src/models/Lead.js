@@ -6,15 +6,20 @@ const leadSchema = new mongoose.Schema(
   {
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: "Client", required: true, index: true },
     clientName: { type: String, required: true }, // denormalised for list views
+    contactPersonName: { type: String, trim: true },
     phone: { type: String, required: true, index: true },
+    alternatePhone: String,
     company: String,
     email: String,
 
     service: { type: String, required: true, index: true },
     requirement: { type: String, required: true, trim: true },
     description: { type: String, default: "" },
+    quantitySizeDimensions: String,
+    internalRemarks: String,
     referenceWebsite: String,
     deadline: Date,
+    enquiryDate: Date,
     budget: String,
 
     source: { type: String, enum: LEAD_SOURCES, default: "WhatsApp", index: true },
@@ -24,6 +29,7 @@ const leadSchema = new mongoose.Schema(
     assignedEmployeeId: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", index: true },
     assignedDate: Date,
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: "Conversation" },
+    submissionKey: { type: String, select: false, unique: true, sparse: true },
 
     attachments: { type: [attachmentSchema], default: [] },
     activity: { type: [activitySchema], default: [] },

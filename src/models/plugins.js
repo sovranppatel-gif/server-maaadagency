@@ -15,6 +15,10 @@ export function toJSONPlugin(schema) {
       delete ret.__v;
       delete ret.passwordHash;
       delete ret.tokenVersion;
+      delete ret.credentialSetupTokenHash;
+      delete ret.credentialSetupExpiresAt;
+      delete ret.credentialSetupPurpose;
+      delete ret.loginAccountId;
       return ret;
     },
   });

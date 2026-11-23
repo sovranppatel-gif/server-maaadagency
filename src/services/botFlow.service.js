@@ -8,6 +8,7 @@ import { notifyWhatsApp } from "./notification.service.js";
 import { recalcClientStats } from "./stats.service.js";
 import { emitEvent } from "../config/socket.js";
 import { logger } from "../config/logger.js";
+import { getAutoLeadCreationEnabled } from "./settings.service.js";
 
 /** Active steps in flow order: the single source of truth for the flow. */
 export function getActiveSteps() {
@@ -80,7 +81,7 @@ export async function startBotFlow(conversation) {
 
 /**
  * Advances the intake flow by one inbound answer.
- * Returns the created lead once the final step is answered.
+ * Returns the created lead when automatic lead creation is enabled.
  *
  * The smart bot may pass an already-interpreted `answer` for the current step
  * and `prefill` values for later steps; without them the raw text is
@@ -127,7 +128,44 @@ export async function advanceBotFlow(conversation, inboundText, { answer, prefil
 
 /** Converts the collected answers into a Lead and hands over to the team. */
 async function completeBotFlow(conversation, answers) {
-  conversation.bot = { ...conversation.bot, active: false, completedAt: new Date(), collected: answers };
+  const completedAt = new Date();
+  if (!(await getAutoLeadCreationEnabled())) {
+    conversation.bot = { ...conversation.bot, active: false, completedAt, collected: answers };
+    await conversation.save();
+    logger.info("WhatsApp intake completed without creating a lead", {
+      conversation: String(conversation._id),
+    });
+    return null;
+  }
+
+  const existingLead = await Lead.findOne({ conversationId: conversation._id });
+  if (existingLead) {
+    conversation.bot = { ...conversation.bot, active: false, completedAt, collected: answers };
+    conversation.leadId = existingLead._id;
+    await conversation.save();
+    return existingLead;
+  }
+
+  // Claim completion atomically so concurrent webhook deliveries cannot create
+  // multiple leads for the same conversation, even across server instances.
+  const claimed = await Conversation.findOneAndUpdate(
+    {
+      _id: conversation._id,
+      "bot.active": true,
+      leadId: { $in: [null] },
+    },
+    {
+      $set: {
+        "bot.active": false,
+        "bot.completedAt": completedAt,
+        "bot.collected": answers,
+      },
+    },
+    { new: true }
+  );
+  if (!claimed) return Lead.findOne({ conversationId: conversation._id });
+  conversation.bot = claimed.bot;
+
   // Volunteered answers only fill fields the flow itself did not collect.
   const collected = { ...(conversation.bot.prefilled ?? {}), ...answers };
 

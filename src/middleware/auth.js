@@ -21,8 +21,14 @@ export const protect = asyncHandler(async (req, _res, next) => {
     throw ApiError.unauthorized(err.name === "TokenExpiredError" ? "Session expired" : "Invalid token");
   }
 
-  const user = await User.findById(payload.sub).populate("employee", "name role avatarColor");
+  const user = await User.findById(payload.sub)
+    .select("+tokenVersion")
+    .populate("employee", "name role avatarColor isActive");
   if (!user || !user.isActive) throw ApiError.unauthorized("Account is no longer active");
+  if ((payload.v ?? 0) !== user.tokenVersion) throw ApiError.unauthorized("Session has been revoked");
+  if (user.role === "EMPLOYEE" && (!user.employee || !user.employee.isActive)) {
+    throw ApiError.unauthorized("Employee account is no longer active");
+  }
 
   req.user = user;
   return next();

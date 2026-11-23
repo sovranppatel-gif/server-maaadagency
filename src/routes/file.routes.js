@@ -7,7 +7,7 @@ import { fileSchemas, idParam } from "../validators/index.js";
 
 const router = Router();
 
-router.use(protect);
+router.use(protect, authorize("ADMIN"));
 
 router.get("/", validate({ query: fileSchemas.list }), ctrl.listFiles);
 router.get("/stats", ctrl.fileStats);

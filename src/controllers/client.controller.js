@@ -44,8 +44,14 @@ export const getClient = asyncHandler(async (req, res) => {
   const client = await Client.findOne(byIdOrCode(req.params.id)).lean();
   if (!client) throw ApiError.notFound("Client not found");
 
+  const leadFilter = { clientId: client._id };
+  if (req.user?.role === "EMPLOYEE") {
+    const employeeId = req.user.employee?._id ?? req.user.employee;
+    leadFilter.assignedEmployeeId = employeeId ?? { $in: [] };
+  }
+
   const [leads, works, projects, conversation] = await Promise.all([
-    Lead.find({ clientId: client._id }).select("-activity -attachments").sort({ createdAt: -1 }).lean(),
+    Lead.find(leadFilter).select("-activity -attachments").sort({ createdAt: -1 }).lean(),
     Work.find({ clientId: client._id })
       .select("-activity -attachments -revisionHistory -employeeReport")
       .sort({ updatedAt: -1 })

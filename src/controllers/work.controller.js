@@ -36,12 +36,24 @@ function buildFilter(query) {
   return filter;
 }
 
+function assertEmployeeOwnsWork(user, work) {
+  if (user?.role !== "EMPLOYEE") return;
+  const employeeId = user.employee?._id ?? user.employee;
+  if (!employeeId || String(work.employeeId) !== String(employeeId)) {
+    throw ApiError.notFound("Work not found");
+  }
+}
+
 /** GET /api/works */
 export const listWorks = asyncHandler(async (req, res) => {
   const query = q(req);
   const { page, limit, skip } = getPagination(query);
   const sort = getSort(query, ["updatedAt", "createdAt", "deadline", "priority", "progress"], { updatedAt: -1 });
   const filter = buildFilter(query);
+  if (req.user.role === "EMPLOYEE") {
+    const employeeId = req.user.employee?._id ?? req.user.employee;
+    filter.employeeId = employeeId ?? { $in: [] };
+  }
 
   const [items, total] = await Promise.all([
     Work.find(filter)
@@ -61,10 +73,12 @@ export const listWorks = asyncHandler(async (req, res) => {
 });
 
 /** GET /api/works/stats — counts behind the Work Management status tabs. */
-export const workStats = asyncHandler(async (_req, res) => {
+export const workStats = asyncHandler(async (req, res) => {
+  const employeeId = req.user.role === "EMPLOYEE" ? req.user.employee?._id ?? req.user.employee : null;
+  const filter = req.user.role === "EMPLOYEE" ? { employeeId: employeeId ?? { $in: [] } } : {};
   const [grouped, total] = await Promise.all([
-    Work.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
-    Work.countDocuments(),
+    Work.aggregate([{ $match: filter }, { $group: { _id: "$status", count: { $sum: 1 } } }]),
+    Work.countDocuments(filter),
   ]);
 
   const byStatus = Object.fromEntries(grouped.map((g) => [g._id, g.count]));
@@ -84,6 +98,7 @@ export const workStats = asyncHandler(async (_req, res) => {
 export const getWork = asyncHandler(async (req, res) => {
   const work = await Work.findOne(byIdOrCode(req.params.id));
   if (!work) throw ApiError.notFound("Work not found");
+  assertEmployeeOwnsWork(req.user, work);
   return sendSuccess(res, work.toJSON());
 });
 
@@ -178,6 +193,7 @@ export const assignWork = asyncHandler(async (req, res) => {
 export const updateProgress = asyncHandler(async (req, res) => {
   const work = await Work.findOne(byIdOrCode(req.params.id));
   if (!work) throw ApiError.notFound("Work not found");
+  assertEmployeeOwnsWork(req.user, work);
 
   work.progress = req.body.progress;
   if (work.status === "ASSIGNED" && work.progress > 0) {
@@ -194,6 +210,7 @@ export const updateProgress = asyncHandler(async (req, res) => {
 export const submitWork = asyncHandler(async (req, res) => {
   const work = await Work.findOne(byIdOrCode(req.params.id));
   if (!work) throw ApiError.notFound("Work not found");
+  assertEmployeeOwnsWork(req.user, work);
   assertTransition(work, "SUBMITTED");
 
   const actor = req.user?.name ?? "Employee";

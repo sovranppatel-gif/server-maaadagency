@@ -6,7 +6,7 @@ import { idParam, projectSchemas } from "../validators/index.js";
 
 const router = Router();
 
-router.use(protect);
+router.use(protect, authorize("ADMIN"));
 
 router.get("/", validate({ query: projectSchemas.list }), ctrl.listProjects);
 router.get("/:id", validate({ params: idParam }), ctrl.getProject);

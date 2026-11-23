@@ -58,12 +58,13 @@ not started by the Vercel entrypoint. The current upload route uses temporary
 `/tmp` storage on Vercel, so files are not durable; use Vercel Blob, S3, or
 another object store before relying on production uploads.
 
-Seeded logins (change them before any real deployment):
+The seeder creates a Master Admin account only. Employee login accounts must be
+created by a Master Admin from the employee profile; the one-time setup link
+must be shared privately.
 
 | Role         | Email                           | Password         |
 | ------------ | ------------------------------- | ---------------- |
 | MASTER_ADMIN | `admin@maaadagency.com`         | `Admin@12345`    |
-| EMPLOYEE     | `rahul.sharma@maaadagency.com`  | `Employee@12345` |
 
 ## Project layout
 

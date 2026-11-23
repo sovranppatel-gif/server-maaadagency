@@ -2,6 +2,7 @@ import { Server } from "socket.io";
 import { env } from "./env.js";
 import { logger } from "./logger.js";
 import { verifyAccessToken } from "../utils/jwt.js";
+import { User } from "../models/User.js";
 
 let io = null;
 
@@ -14,11 +15,22 @@ export function initSocket(httpServer) {
     cors: { origin: env.clientOrigin.split(",").map((o) => o.trim()), credentials: true },
   });
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token;
-    if (!token) return next(); // allow anonymous read-only sockets in development
+    if (!token) return next(new Error("Authentication required"));
     try {
-      socket.user = verifyAccessToken(token);
+      const payload = verifyAccessToken(token);
+      const user = await User.findById(payload.sub)
+        .select("+tokenVersion")
+        .populate("employee", "isActive");
+      if (!user?.isActive || (payload.v ?? 0) !== user.tokenVersion) {
+        return next(new Error("Session is no longer active"));
+      }
+      if (user.role === "EMPLOYEE" && (!user.employee || !user.employee.isActive)) {
+        return next(new Error("Employee account is no longer active"));
+      }
+      if (user.role === "EMPLOYEE") return next(new Error("Employee sockets are not enabled"));
+      socket.user = { sub: String(user._id), role: user.role };
     } catch {
       return next(new Error("Unauthorized socket connection"));
     }
