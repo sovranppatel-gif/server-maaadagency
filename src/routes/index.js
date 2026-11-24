@@ -13,6 +13,8 @@ import fileRoutes from "./file.routes.js";
 import whatsappRoutes from "./whatsapp.routes.js";
 import analyticsRoutes from "./analytics.routes.js";
 import settingsRoutes from "./settings.routes.js";
+import followUpRoutes from "./followUp.routes.js";
+import quotationRoutes from "./quotation.routes.js";
 
 const router = Router();
 
@@ -27,6 +29,8 @@ router.get("/health", (_req, res) => {
 
 router.use("/auth", authRoutes);
 router.use("/leads", leadRoutes);
+router.use("/follow-ups", followUpRoutes);
+router.use("/quotations", quotationRoutes);
 router.use("/works", workRoutes);
 router.use("/employees", employeeRoutes);
 router.use("/clients", clientRoutes);

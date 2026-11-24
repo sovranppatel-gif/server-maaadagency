@@ -9,6 +9,7 @@ const notificationSchema = new mongoose.Schema(
     category: { type: String, enum: NOTIFICATION_CATEGORIES, default: "System", index: true },
     read: { type: Boolean, default: false, index: true },
     href: String,
+    dedupeKey: { type: String, unique: true, sparse: true, select: false },
     // null audience means every admin sees it; otherwise it is user-scoped.
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true },
     timestamp: { type: Date, default: Date.now, index: true },

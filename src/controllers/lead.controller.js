@@ -1,4 +1,5 @@
 import { Lead } from "../models/Lead.js";
+import { LeadFollowUp } from "../models/LeadFollowUp.js";
 import { Client } from "../models/Client.js";
 import { Employee } from "../models/Employee.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -8,7 +9,7 @@ import { buildMeta, byIdOrCode, escapeRegex, getPagination, getSort } from "../u
 import { q } from "../middleware/validate.js";
 import { normalisePhone, prettyPhone, avatarColorFor } from "../utils/format.js";
 import { recalcClientStats } from "../services/stats.service.js";
-import { notifyWork } from "../services/notification.service.js";
+import { notifyEmployee, notifyWork } from "../services/notification.service.js";
 import { emitEvent } from "../config/socket.js";
 
 /** Translates dashboard filters into a Mongo query without widening employee access. */
@@ -54,6 +55,17 @@ function leadResponse(lead) {
   return data;
 }
 
+function leadResponseForUser(lead, user) {
+  const data = leadResponse(lead);
+  if (user?.role === "EMPLOYEE") {
+    delete data.budget;
+    delete data.internalRemarks;
+    delete data.activity;
+    delete data.attachments;
+  }
+  return data;
+}
+
 /** GET /api/leads */
 export const listLeads = asyncHandler(async (req, res) => {
   const query = q(req);
@@ -64,7 +76,12 @@ export const listLeads = asyncHandler(async (req, res) => {
   const [items, total] = await Promise.all([
     // Heavy sub-documents are excluded from list views: they are only needed
     // on the detail screen, and skipping them keeps payloads small.
-    Lead.find(filter).select("-activity -attachments").sort(sort).skip(skip).limit(limit).lean(),
+    Lead.find(filter)
+      .select(req.user.role === "EMPLOYEE" ? "-activity -attachments -budget -internalRemarks" : "-activity -attachments")
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .lean(),
     Lead.countDocuments(filter),
   ]);
 
@@ -103,7 +120,7 @@ export const getLead = asyncHandler(async (req, res) => {
   const lead = await Lead.findOne(byIdOrCode(req.params.id));
   if (!lead) throw ApiError.notFound("Lead not found");
   if (!canEmployeeAccessLead(req.user, lead)) throw ApiError.notFound("Lead not found");
-  return sendSuccess(res, lead.toJSON());
+  return sendSuccess(res, leadResponseForUser(lead, req.user));
 });
 
 /** POST /api/leads — manual entry; creates the client on the fly when needed. */
@@ -182,7 +199,14 @@ export const createLead = asyncHandler(async (req, res) => {
   await recalcClientStats(client._id);
   emitEvent("lead:new", leadResponse(lead));
   if (employee) {
-    await notifyWork("Lead assigned", `${lead.requirement} assigned to ${employee.name}`, `/master-admin/leads/${lead.code}`);
+    await Promise.all([
+      notifyWork("Lead assigned", `${lead.requirement} assigned to ${employee.name}`, `/master-admin/leads/${lead.code}`),
+      notifyEmployee(employee._id, {
+        title: "New lead assigned to you",
+        description: `${lead.clientName}: ${lead.requirement}`,
+        href: `/employee/leads/${lead.code}`,
+      }),
+    ]);
   }
 
   return sendCreated(res, leadResponse(lead));
@@ -208,7 +232,7 @@ export const updateLead = asyncHandler(async (req, res) => {
   }
 
   await lead.save();
-  return sendSuccess(res, lead.toJSON());
+  return sendSuccess(res, leadResponseForUser(lead, req.user));
 });
 
 /** POST /api/leads/:id/assign */
@@ -222,17 +246,34 @@ export const assignLead = asyncHandler(async (req, res) => {
   if (!employee) throw ApiError.badRequest("Employee not found");
   if (!employee.isActive) throw ApiError.badRequest("This employee is deactivated");
 
+  const previousEmployeeId = lead.assignedEmployeeId;
+  const assignmentChanged = String(previousEmployeeId ?? "") !== String(employee._id);
+  if (!assignmentChanged) return sendSuccess(res, lead.toJSON());
+
   lead.assignedEmployeeId = employee._id;
   lead.assignedDate = new Date();
   if (lead.status === "New") lead.status = "Assigned";
   lead.log(`Assigned to ${employee.name}`, req.user?.name ?? "Admin");
   await lead.save();
 
-  await notifyWork(
-    "Lead assigned",
-    `${lead.requirement} assigned to ${employee.name}`,
-    `/master-admin/leads/${lead.code}`
-  );
+  await Promise.all([
+    notifyWork(
+      "Lead assigned",
+      `${lead.requirement} assigned to ${employee.name}`,
+      `/master-admin/leads/${lead.code}`
+    ),
+    notifyEmployee(employee._id, {
+      title: previousEmployeeId ? "Lead reassigned to you" : "New lead assigned to you",
+      description: `${lead.clientName}: ${lead.requirement}`,
+      href: `/employee/leads/${lead.code}`,
+    }),
+    previousEmployeeId
+      ? notifyEmployee(previousEmployeeId, {
+          title: "Lead reassigned",
+          description: `${lead.code} was reassigned to ${employee.name}.`,
+        })
+      : null,
+  ]);
   emitEvent("lead:updated", lead.toJSON());
 
   return sendSuccess(res, lead.toJSON());
@@ -252,13 +293,17 @@ export const updateLeadStatus = asyncHandler(async (req, res) => {
   await lead.save();
 
   emitEvent("lead:updated", lead.toJSON());
-  return sendSuccess(res, lead.toJSON());
+  return sendSuccess(res, leadResponseForUser(lead, req.user));
 });
 
 /** DELETE /api/leads/:id */
 export const deleteLead = asyncHandler(async (req, res) => {
-  const lead = await Lead.findOneAndDelete(byIdOrCode(req.params.id));
+  const lead = await Lead.findOne(byIdOrCode(req.params.id));
   if (!lead) throw ApiError.notFound("Lead not found");
+  if (await LeadFollowUp.exists({ leadId: lead._id })) {
+    throw ApiError.conflict("This lead has permanent follow-up history and cannot be deleted");
+  }
+  await lead.deleteOne();
 
   await recalcClientStats(lead.clientId);
   return sendSuccess(res, { id: String(lead._id), deleted: true });

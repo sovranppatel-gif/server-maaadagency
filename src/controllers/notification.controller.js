@@ -41,9 +41,10 @@ export const unreadCount = asyncHandler(async (req, res) => {
 
 /** PATCH /api/notifications/:id/read */
 export const markRead = asyncHandler(async (req, res) => {
+  const read = req.body?.read ?? true;
   const notification = await Notification.findOneAndUpdate(
     { _id: req.params.id, ...audienceFilter(req) },
-    { read: true },
+    { read },
     { new: true }
   );
   if (!notification) throw ApiError.notFound("Notification not found");

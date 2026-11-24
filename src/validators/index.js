@@ -12,6 +12,8 @@ import {
   PROJECT_STATUSES,
   WORK_STATUSES,
 } from "../models/common.js";
+import { FOLLOW_UP_COMMUNICATION_TYPES, FOLLOW_UP_INTEREST_LEVELS } from "../models/LeadFollowUp.js";
+import { QUOTATION_STATUSES } from "../models/Quotation.js";
 
 const objectIdish = z.string().min(1);
 const optionalDate = z.union([z.string(), z.date()]).optional();
@@ -104,6 +106,19 @@ export const leadSchemas = {
   }),
   assign: z.object({ employeeId: objectIdish }),
   status: z.object({ status: z.enum(LEAD_STATUSES) }),
+  followUp: z.object({
+    communicationType: z.enum(FOLLOW_UP_COMMUNICATION_TYPES),
+    contactedAt: z.iso.datetime(),
+    customerResponse: z.string().trim().max(3000).optional().default(""),
+    discussionNotes: z.string().trim().min(1).max(5000),
+    nextFollowUpAt: z.iso.datetime().optional(),
+    interestLevel: z.enum(FOLLOW_UP_INTEREST_LEVELS),
+    quotationRequired: z.boolean().default(false),
+    employeeRemarks: z.string().trim().max(2000).optional().default(""),
+  }),
+  followUpAuthorization: z.object({
+    additionalAttempts: z.coerce.number().int().min(1).max(4),
+  }),
 };
 
 /* Work ------------------------------------------------------------------- */
@@ -113,6 +128,7 @@ export const workSchemas = {
     priority: z.enum([...PRIORITIES, "All"]).optional(),
     employeeId: z.string().optional(),
     clientId: z.string().optional(),
+    upcomingOnly: z.enum(["true", "false"]).optional(),
   }),
   create: z.object({
     leadId: objectIdish.optional(),
@@ -133,17 +149,87 @@ export const workSchemas = {
     progress: z.coerce.number().min(0).max(100).optional(),
   }),
   assign: z.object({ employeeId: objectIdish }),
-  progress: z.object({ progress: z.coerce.number().min(0).max(100) }),
+  progress: z.object({
+    progress: z.coerce.number().min(0).max(100).optional(),
+    start: z.boolean().optional(),
+    progressNote: z.string().trim().max(2000).optional(),
+    blockedReason: z.string().trim().max(1000).optional(),
+  }).refine((value) => Object.keys(value).length > 0, "Provide at least one progress update"),
   revision: z.object({
     notes: z.string().min(1, "Describe the changes required"),
     priority: z.enum(PRIORITIES).default("MEDIUM"),
     deadline: optionalDate,
   }),
   submit: z.object({
-    summary: z.string().min(1, "A summary is required"),
-    remarks: z.string().optional().default(""),
-    timeSpent: z.string().optional().default(""),
+    summary: z.string().trim().min(1, "A summary is required").max(5000),
+    remarks: z.string().trim().max(3000).optional().default(""),
+    timeSpent: z.string().trim().max(100).optional().default(""),
   }),
+};
+
+export const followUpSchemas = {
+  list: paginationQuery.extend({
+    bucket: z.enum(["All", "upcoming", "today", "overdue"]).optional(),
+  }),
+};
+
+const quotationLineItem = z.object({
+  serviceId: z.string().regex(/^[a-f\d]{24}$/i).optional().or(z.literal("")),
+  serviceName: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(2000).optional().default(""),
+  quantityMilli: z.number().int().min(1).max(1_000_000_000),
+  unit: z.string().trim().min(1).max(40),
+  unitRatePaise: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  discountBps: z.number().int().min(0).max(10_000).default(0),
+  taxRateBps: z.number().int().min(0).max(10_000).default(0),
+});
+
+const quotationDraftFields = {
+  lineItems: z.array(quotationLineItem).min(1).max(100),
+  validFrom: z.iso.datetime(),
+  validUntil: z.iso.datetime(),
+  currency: z.literal("INR").default("INR"),
+  paymentTerms: z.string().trim().max(3000).optional().default(""),
+  termsAndConditions: z.string().trim().max(8000).optional().default(""),
+  internalNotes: z.string().trim().max(3000).optional().default(""),
+};
+
+function validateQuotationDates(value, context) {
+  if (new Date(value.validUntil) < new Date(value.validFrom)) {
+    context.addIssue({ code: "custom", path: ["validUntil"], message: "Valid until must be on or after valid from" });
+  }
+}
+
+export const quotationSchemas = {
+  list: paginationQuery.extend({
+    status: z.enum([...QUOTATION_STATUSES, "All"]).optional(),
+    leadId: z.string().optional(),
+    expiringOnly: z.enum(["true", "false"]).optional(),
+  }),
+  create: z.object({
+    leadId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
+    clientId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
+    assignedSalesEmployeeId: z.string().regex(/^[a-f\d]{24}$/i).optional().or(z.literal("")),
+    ...quotationDraftFields,
+  }).superRefine((value, context) => {
+    if (!value.leadId && !value.clientId) {
+      context.addIssue({ code: "custom", path: ["leadId"], message: "Select a lead or a client" });
+    }
+    validateQuotationDates(value, context);
+  }),
+  draft: z.object(quotationDraftFields).superRefine(validateQuotationDates),
+  submit: z.object({}),
+  approve: z.object({}),
+  reject: z.object({ reason: z.string().trim().min(1).max(2000) }),
+  revisionRequest: z.object({ reason: z.string().trim().min(1).max(2000) }),
+  send: z.object({ sentMethod: z.enum(["EMAIL", "WHATSAPP", "IN_PERSON", "OTHER"]) }),
+  customerDecision: z.object({
+    decision: z.enum(["ACCEPTED", "REJECTED"]),
+    note: z.string().trim().max(2000).optional().default(""),
+  }),
+  expire: z.object({}),
+  revision: z.object({}),
+  pdf: z.object({ version: z.coerce.number().int().positive().optional() }),
 };
 
 /* Employees and clients --------------------------------------------------- */
@@ -250,6 +336,7 @@ export const notificationSchemas = {
     category: z.enum([...NOTIFICATION_CATEGORIES, "All"]).optional(),
     unreadOnly: z.enum(["true", "false"]).optional(),
   }),
+  read: z.object({ read: z.boolean().optional() }),
 };
 
 export const fileSchemas = {

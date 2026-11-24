@@ -28,6 +28,11 @@ const leadSchema = new mongoose.Schema(
 
     assignedEmployeeId: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", index: true },
     assignedDate: Date,
+    followUpLimit: { type: Number, default: 4, min: 4 },
+    followUpReviewRequired: { type: Boolean, default: false, index: true },
+    followUpsClosed: { type: Boolean, default: false, index: true },
+    followUpsClosedAt: Date,
+    followUpsClosedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", select: false },
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: "Conversation" },
     submissionKey: { type: String, select: false, unique: true, sparse: true },
 

@@ -24,6 +24,8 @@ const workSchema = new mongoose.Schema(
     deadline: { type: Date, required: true },
     status: { type: String, enum: WORK_STATUSES, default: "UNASSIGNED", index: true },
     progress: { type: Number, default: 0, min: 0, max: 100 },
+    progressNote: { type: String, default: "", maxlength: 2000 },
+    blockedReason: { type: String, default: "", maxlength: 1000 },
 
     attachments: { type: [attachmentSchema], default: [] },
     employeeReport: employeeReportSchema,
