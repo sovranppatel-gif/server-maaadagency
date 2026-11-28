@@ -1,5 +1,6 @@
 import { Lead } from "../models/Lead.js";
 import { LeadFollowUp } from "../models/LeadFollowUp.js";
+import { LeadVisit } from "../models/LeadVisit.js";
 import { Client } from "../models/Client.js";
 import { Employee } from "../models/Employee.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -10,12 +11,13 @@ import { q } from "../middleware/validate.js";
 import { normalisePhone, prettyPhone, avatarColorFor } from "../utils/format.js";
 import { recalcClientStats } from "../services/stats.service.js";
 import { notifyEmployee, notifyWork } from "../services/notification.service.js";
+import { reassignActiveLeadVisits } from "./visit.controller.js";
 import { emitEvent } from "../config/socket.js";
 
 /** Translates dashboard filters into a Mongo query without widening employee access. */
 function buildFilter(query, user) {
   const filter = {};
-  const { search, status, priority, source, service, employeeId } = query;
+  const { search, status, priority, quality, source, service, employeeId } = query;
 
   if (search) {
     const rx = new RegExp(escapeRegex(search), "i");
@@ -29,10 +31,16 @@ function buildFilter(query, user) {
       { email: rx },
       { code: rx },
       { service: rx },
+      { quality: rx },
     ];
   }
   if (status && status !== "All") filter.status = status;
   if (priority && priority !== "All") filter.priority = priority;
+  if (quality === "UNCLASSIFIED") {
+    filter.quality = null;
+  } else if (quality && quality !== "All") {
+    filter.quality = quality;
+  }
   if (source && source !== "All") filter.source = source;
   if (service && service !== "All") filter.service = service;
   if (user?.role === "EMPLOYEE") {
@@ -52,6 +60,9 @@ function canEmployeeAccessLead(user, lead) {
 function leadResponse(lead) {
   const data = lead.toJSON();
   delete data.submissionKey;
+  if (Array.isArray(data.qualityHistory)) {
+    data.qualityHistory = data.qualityHistory.map(({ actorId: _actorId, ...entry }) => entry);
+  }
   return data;
 }
 
@@ -62,6 +73,7 @@ function leadResponseForUser(lead, user) {
     delete data.internalRemarks;
     delete data.activity;
     delete data.attachments;
+    delete data.importMetadata;
   }
   return data;
 }
@@ -77,7 +89,7 @@ export const listLeads = asyncHandler(async (req, res) => {
     // Heavy sub-documents are excluded from list views: they are only needed
     // on the detail screen, and skipping them keeps payloads small.
     Lead.find(filter)
-      .select(req.user.role === "EMPLOYEE" ? "-activity -attachments -budget -internalRemarks" : "-activity -attachments")
+      .select(req.user.role === "EMPLOYEE" ? "-activity -attachments -qualityHistory -historicalFollowUps -importMetadata -budget -internalRemarks" : "-activity -attachments -qualityHistory -historicalFollowUps -importMetadata")
       .sort(sort)
       .skip(skip)
       .limit(limit)
@@ -99,12 +111,14 @@ export const leadStats = asyncHandler(async (req, res) => {
     req.user?.role === "EMPLOYEE"
       ? { assignedEmployeeId: assignedTo ?? { $in: [] } }
       : {};
-  const [grouped, total] = await Promise.all([
+  const [grouped, qualityGrouped, total] = await Promise.all([
     Lead.aggregate([{ $match: filter }, { $group: { _id: "$status", count: { $sum: 1 } } }]),
+    Lead.aggregate([{ $match: filter }, { $group: { _id: { $ifNull: ["$quality", "UNCLASSIFIED"] }, count: { $sum: 1 } } }]),
     Lead.countDocuments(filter),
   ]);
 
   const byStatus = Object.fromEntries(grouped.map((g) => [g._id, g.count]));
+  const byQuality = Object.fromEntries(qualityGrouped.map((g) => [g._id, g.count]));
   return sendSuccess(res, {
     total,
     new: byStatus.New ?? 0,
@@ -112,6 +126,7 @@ export const leadStats = asyncHandler(async (req, res) => {
     inProgress: byStatus["In Progress"] ?? 0,
     converted: (byStatus.Approved ?? 0) + (byStatus.Completed ?? 0),
     byStatus,
+    byQuality,
   });
 });
 
@@ -183,10 +198,25 @@ export const createLead = asyncHandler(async (req, res) => {
       submissionKey,
       activity: [
         { label: "Lead Created", actor: req.user?.name ?? "Admin", timestamp: new Date() },
+        ...(body.quality
+          ? [{ label: `Quality set to ${body.quality}`, actor: req.user?.name ?? "Admin", timestamp: new Date() }]
+          : []),
         ...(employee
           ? [{ label: `Assigned to ${employee.name}`, actor: req.user?.name ?? "Admin", timestamp: new Date() }]
           : []),
       ],
+      qualityHistory: body.quality
+        ? [
+            {
+              fromQuality: null,
+              toQuality: body.quality,
+              actor: req.user?.name ?? "Admin",
+              actorId: req.user?._id,
+              actorRole: req.user?.role,
+              timestamp: new Date(),
+            },
+          ]
+        : [],
     });
   } catch (err) {
     if (submissionKey && err?.code === 11000 && err.keyPattern?.submissionKey) {
@@ -219,16 +249,31 @@ export const updateLead = asyncHandler(async (req, res) => {
   if (!canEmployeeAccessLead(req.user, lead)) throw ApiError.notFound("Lead not found");
 
   const previousStatus = lead.status;
-  const { deadline, enquiryDate, alternatePhone, ...fields } = req.body;
+  const previousQuality = lead.quality ?? null;
+  const { deadline, enquiryDate, alternatePhone, quality, ...fields } = req.body;
   Object.assign(lead, fields);
   if (deadline !== undefined) lead.deadline = deadline ? new Date(deadline) : undefined;
   if (enquiryDate !== undefined) lead.enquiryDate = enquiryDate ? new Date(enquiryDate) : undefined;
   if (alternatePhone !== undefined) lead.alternatePhone = alternatePhone ? normalisePhone(alternatePhone) : undefined;
+  if (quality !== undefined) lead.quality = quality ?? undefined;
 
+  const actor = req.user?.name ?? "Admin";
+  if (quality !== undefined && (quality ?? null) !== previousQuality) {
+    const nextQuality = quality ?? null;
+    lead.qualityHistory.push({
+      fromQuality: previousQuality,
+      toQuality: nextQuality,
+      actor,
+      actorId: req.user?._id,
+      actorRole: req.user?.role,
+      timestamp: new Date(),
+    });
+    lead.log(`Quality changed to ${nextQuality ?? "Unclassified"}`, actor);
+  }
   if (req.body.status && req.body.status !== previousStatus) {
-    lead.log(`Status changed to ${req.body.status}`, req.user?.name ?? "Admin");
-  } else {
-    lead.log("Lead updated", req.user?.name ?? "Admin");
+    lead.log(`Status changed to ${req.body.status}`, actor);
+  } else if (quality === undefined || (quality ?? null) === previousQuality) {
+    lead.log("Lead updated", actor);
   }
 
   await lead.save();
@@ -255,6 +300,8 @@ export const assignLead = asyncHandler(async (req, res) => {
   if (lead.status === "New") lead.status = "Assigned";
   lead.log(`Assigned to ${employee.name}`, req.user?.name ?? "Admin");
   await lead.save();
+
+  await reassignActiveLeadVisits(lead, employee, req.user);
 
   await Promise.all([
     notifyWork(
@@ -296,12 +343,68 @@ export const updateLeadStatus = asyncHandler(async (req, res) => {
   return sendSuccess(res, leadResponseForUser(lead, req.user));
 });
 
+/** PATCH /api/leads/:id/quality — independent of workflow status. */
+export const updateLeadQuality = asyncHandler(async (req, res) => {
+  const lead = await Lead.findOne(byIdOrCode(req.params.id));
+  if (!lead) throw ApiError.notFound("Lead not found");
+  if (!canEmployeeAccessLead(req.user, lead)) throw ApiError.notFound("Lead not found");
+  if (req.user?.role === "EMPLOYEE" && !req.user.employee?.isActive) {
+    throw ApiError.forbidden("An active employee account is required");
+  }
+
+  const nextQuality = req.body.quality;
+  const previousQuality = lead.quality ?? null;
+  if (previousQuality === nextQuality) {
+    return sendSuccess(res, leadResponseForUser(lead, req.user));
+  }
+
+  const actor = req.user?.name ?? (req.user?.role === "EMPLOYEE" ? "Employee" : "Admin");
+  const now = new Date();
+  const reason = req.body.reason?.trim() || undefined;
+  const ownershipFilter = req.user?.role === "EMPLOYEE"
+    ? { assignedEmployeeId: req.user.employee?._id ?? req.user.employee }
+    : {};
+  const qualityCondition = previousQuality === null ? { $in: [null] } : previousQuality;
+
+  const updated = await Lead.findOneAndUpdate(
+    { _id: lead._id, ...ownershipFilter, quality: qualityCondition },
+    {
+      $set: { quality: nextQuality },
+      $push: {
+        qualityHistory: {
+          fromQuality: previousQuality,
+          toQuality: nextQuality,
+          actor,
+          actorId: req.user?._id,
+          actorRole: req.user?.role,
+          reason,
+          timestamp: now,
+        },
+        activity: {
+          label: `Quality changed from ${previousQuality ?? "Unclassified"} to ${nextQuality}`,
+          actor,
+          description: reason,
+          timestamp: now,
+        },
+      },
+    },
+    { new: true, runValidators: true }
+  );
+  if (!updated) throw ApiError.conflict("Lead quality was updated concurrently; please retry");
+
+  emitEvent("lead:updated", updated.toJSON());
+  return sendSuccess(res, leadResponseForUser(updated, req.user));
+});
+
 /** DELETE /api/leads/:id */
 export const deleteLead = asyncHandler(async (req, res) => {
   const lead = await Lead.findOne(byIdOrCode(req.params.id));
   if (!lead) throw ApiError.notFound("Lead not found");
   if (await LeadFollowUp.exists({ leadId: lead._id })) {
     throw ApiError.conflict("This lead has permanent follow-up history and cannot be deleted");
+  }
+  if (await LeadVisit.exists({ leadId: lead._id })) {
+    throw ApiError.conflict("This lead has permanent customer visit history and cannot be deleted");
   }
   await lead.deleteOne();
 

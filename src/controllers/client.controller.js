@@ -51,7 +51,10 @@ export const getClient = asyncHandler(async (req, res) => {
   }
 
   const [leads, works, projects, conversation] = await Promise.all([
-    Lead.find(leadFilter).select("-activity -attachments").sort({ createdAt: -1 }).lean(),
+    Lead.find(leadFilter)
+      .select("-activity -attachments -qualityHistory -historicalFollowUps -importMetadata")
+      .sort({ createdAt: -1 })
+      .lean(),
     Work.find({ clientId: client._id })
       .select("-activity -attachments -revisionHistory -employeeReport")
       .sort({ updatedAt: -1 })

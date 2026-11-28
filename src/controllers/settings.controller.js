@@ -28,12 +28,12 @@ export const getWhatsAppSettings = asyncHandler(async (_req, res) => {
   const status = getConnectionStatus();
 
   return sendSuccess(res, {
-    businessAccountId: stored.businessAccountId || maskSecret(env.WHATSAPP_BUSINESS_ACCOUNT_ID),
-    phoneNumberId: stored.phoneNumberId || maskSecret(env.WHATSAPP_PHONE_NUMBER_ID),
+    businessAccountId: stored.businessAccountId || maskSecret(env.whatsappBusinessAccountId),
+    phoneNumberId: stored.phoneNumberId || maskSecret(env.whatsappPhoneNumberId),
     // Never returned in clear text, regardless of who is asking.
-    accessToken: maskSecret(env.WHATSAPP_ACCESS_TOKEN),
-    webhookVerifyToken: maskSecret(env.WHATSAPP_VERIFY_TOKEN),
-    webhookUrl: stored.webhookUrl || `${env.CLIENT_ORIGIN.replace(/\/$/, "")}/api/whatsapp/webhook`,
+    accessToken: maskSecret(env.whatsappAccessToken),
+    webhookVerifyToken: maskSecret(env.whatsappVerifyToken),
+    webhookUrl: stored.webhookUrl || `${env.clientOrigin.replace(/\/$/, "")}/api/whatsapp/webhook`,
     autoLeadCreationEnabled,
     connected: status.connected,
     dryRun: status.dryRun,

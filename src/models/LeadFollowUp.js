@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 import { toJSONPlugin } from "./plugins.js";
+import { CALL_RESPONSES } from "./common.js";
 
+export { CALL_RESPONSES };
 export const FOLLOW_UP_COMMUNICATION_TYPES = ["Call", "WhatsApp", "Meeting", "Email"];
 export const FOLLOW_UP_INTEREST_LEVELS = ["Interested", "Not Interested", "Neutral", "Unsure"];
 
@@ -11,6 +13,8 @@ const leadFollowUpSchema = new mongoose.Schema(
     submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, select: false },
     attemptNumber: { type: Number, required: true, min: 1 },
     communicationType: { type: String, enum: FOLLOW_UP_COMMUNICATION_TYPES, required: true },
+    callResponse: { type: String, enum: CALL_RESPONSES, index: true },
+    callResponseRaw: { type: String, trim: true, maxlength: 120 },
     contactedAt: { type: Date, required: true },
     customerResponse: { type: String, default: "", trim: true, maxlength: 3000 },
     discussionNotes: { type: String, required: true, trim: true, maxlength: 5000 },
@@ -27,6 +31,7 @@ leadFollowUpSchema.plugin(toJSONPlugin);
 leadFollowUpSchema.index({ leadId: 1, attemptNumber: 1 }, { unique: true });
 leadFollowUpSchema.index({ leadId: 1, idempotencyKey: 1 }, { unique: true });
 leadFollowUpSchema.index({ leadId: 1, attemptNumber: -1 });
+leadFollowUpSchema.index({ leadId: 1, callResponse: 1 });
 leadFollowUpSchema.index({ employeeId: 1, nextFollowUpAt: 1 });
 
 export const LeadFollowUp = mongoose.model("LeadFollowUp", leadFollowUpSchema);

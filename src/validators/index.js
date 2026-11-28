@@ -1,17 +1,24 @@
 import { z } from "zod";
 import {
   AVAILABILITY,
+  CALL_RESPONSES,
   CONVERSATION_STATUSES,
   EMPLOYEE_DEPARTMENTS,
   EMPLOYMENT_TYPES,
   FILE_CATEGORIES,
+  LEAD_QUALITIES,
   LEAD_SOURCES,
   LEAD_STATUSES,
   NOTIFICATION_CATEGORIES,
   PRIORITIES,
   PROJECT_STATUSES,
+  VISIT_LOCATION_TYPES,
+  VISIT_OUTCOMES,
+  VISIT_STATUSES,
+  VISIT_TYPES,
   WORK_STATUSES,
 } from "../models/common.js";
+import { normaliseCallResponse } from "../utils/crmMappings.js";
 import { FOLLOW_UP_COMMUNICATION_TYPES, FOLLOW_UP_INTEREST_LEVELS } from "../models/LeadFollowUp.js";
 import { QUOTATION_STATUSES } from "../models/Quotation.js";
 
@@ -61,6 +68,7 @@ export const leadSchemas = {
   list: paginationQuery.extend({
     status: z.enum([...LEAD_STATUSES, "All"]).optional(),
     priority: z.enum([...PRIORITIES, "All"]).optional(),
+    quality: z.enum([...LEAD_QUALITIES, "UNCLASSIFIED", "All"]).optional(),
     source: z.enum([...LEAD_SOURCES, "All"]).optional(),
     service: z.string().optional(),
     employeeId: z.string().optional(),
@@ -84,6 +92,7 @@ export const leadSchemas = {
     budget: z.string().trim().max(50).optional(),
     source: z.enum(LEAD_SOURCES).default("Manual"),
     priority: z.enum(PRIORITIES).default("MEDIUM"),
+    quality: z.enum(LEAD_QUALITIES).optional(),
     assignedEmployeeId: objectIdish.optional().or(z.literal("")),
   }),
   update: z.object({
@@ -100,14 +109,43 @@ export const leadSchemas = {
     budget: z.string().trim().max(50).optional(),
     source: z.enum(LEAD_SOURCES).optional(),
     priority: z.enum(PRIORITIES).optional(),
+    quality: z.enum(LEAD_QUALITIES).nullable().optional(),
     status: z.enum(LEAD_STATUSES).optional(),
     company: z.string().optional(),
     email: z.string().email().optional().or(z.literal("")),
   }),
   assign: z.object({ employeeId: objectIdish }),
   status: z.object({ status: z.enum(LEAD_STATUSES) }),
+  quality: z.object({
+    quality: z.enum(LEAD_QUALITIES),
+    reason: z.string().trim().max(500).optional().default(""),
+  }),
+  confirmImport: z.object({
+    previewToken: z.string().trim().min(20).max(200),
+    selectedSheets: z.array(z.string().trim().min(1).max(120)).min(1).max(10).optional(),
+    importMode: z.enum(["CREATE_SKIP_DUPLICATES", "DRY_RUN"]).default("CREATE_SKIP_DUPLICATES"),
+  }),
+  exportQuery: z.object({
+    format: z.enum(["xlsx", "csv"]).default("xlsx"),
+    search: z.string().trim().optional(),
+    status: z.enum([...LEAD_STATUSES, "All"]).optional(),
+    priority: z.enum([...PRIORITIES, "All"]).optional(),
+    quality: z.enum([...LEAD_QUALITIES, "UNCLASSIFIED", "All"]).optional(),
+    source: z.enum([...LEAD_SOURCES, "All"]).optional(),
+    service: z.string().trim().optional(),
+    employeeId: z.string().trim().optional(),
+    from: z.string().trim().optional(),
+    to: z.string().trim().optional(),
+    includeFollowUps: z.enum(["true", "false"]).optional(),
+    includeVisits: z.enum(["true", "false"]).optional(),
+  }),
   followUp: z.object({
     communicationType: z.enum(FOLLOW_UP_COMMUNICATION_TYPES),
+    callResponse: z.string().trim().superRefine((val, ctx) => {
+      if (!normaliseCallResponse(val)) {
+        ctx.addIssue({ code: "custom", message: "Invalid call response category" });
+      }
+    }).optional(),
     contactedAt: z.iso.datetime(),
     customerResponse: z.string().trim().max(3000).optional().default(""),
     discussionNotes: z.string().trim().min(1).max(5000),
@@ -170,6 +208,102 @@ export const workSchemas = {
 export const followUpSchemas = {
   list: paginationQuery.extend({
     bucket: z.enum(["All", "upcoming", "today", "overdue"]).optional(),
+    callResponse: z.enum([...CALL_RESPONSES, "All"]).optional(),
+  }),
+};
+
+const visitLocationRefine = (value, ctx) => {
+  const isVirtual = value.visitType === "VIRTUAL_MEETING" || value.locationType === "VIRTUAL";
+  if (isVirtual) {
+    if (!value.meetingLink || !/^https?:\/\/\S+$/i.test(value.meetingLink.trim())) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["meetingLink"],
+        message: "A valid http(s) meeting link is required for virtual visits",
+      });
+    }
+  } else if (!value.locationAddress || value.locationAddress.trim().length < 3) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["locationAddress"],
+      message: "Location address is required for in-person visits",
+    });
+  }
+  if (value.scheduledEnd) {
+    const start = new Date(value.scheduledStart);
+    const end = new Date(value.scheduledEnd);
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end <= start) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["scheduledEnd"],
+        message: "End time must be after start time",
+      });
+    }
+  }
+};
+
+export const visitSchemas = {
+  list: paginationQuery.extend({
+    leadId: z.string().trim().optional(),
+    status: z.enum([...VISIT_STATUSES, "All"]).optional(),
+    visitType: z.enum([...VISIT_TYPES, "All"]).optional(),
+    employeeId: z.string().trim().optional(),
+    bucket: z.enum(["All", "upcoming", "today", "overdue", "completed", "cancelled"]).optional(),
+    from: z.string().trim().optional(),
+    to: z.string().trim().optional(),
+  }),
+  report: z.object({
+    from: z.string().trim().optional(),
+    to: z.string().trim().optional(),
+    employeeId: z.string().trim().optional(),
+  }),
+  create: z.object({
+    visitType: z.enum(VISIT_TYPES),
+    title: z.string().trim().min(2, "Title is required").max(160),
+    scheduledStart: z.iso.datetime(),
+    scheduledEnd: z.iso.datetime().optional(),
+    timezone: z.literal("Asia/Kolkata").default("Asia/Kolkata"),
+    locationType: z.enum(VISIT_LOCATION_TYPES),
+    locationAddress: z.string().trim().max(500).optional().default(""),
+    meetingLink: z.string().trim().max(500).optional().default(""),
+    customerContactPerson: z.string().trim().max(120).optional().default(""),
+    notes: z.string().trim().max(3000).optional().default(""),
+    assignedEmployeeId: objectIdish.optional().or(z.literal("")),
+  }).superRefine(visitLocationRefine),
+  reschedule: z.object({
+    scheduledStart: z.iso.datetime(),
+    scheduledEnd: z.iso.datetime().optional(),
+    locationType: z.enum(VISIT_LOCATION_TYPES).optional(),
+    locationAddress: z.string().trim().max(500).optional(),
+    meetingLink: z.string().trim().max(500).optional(),
+    reason: z.string().trim().min(2, "Provide a reschedule reason").max(1000),
+  }).superRefine((value, ctx) => {
+    if (value.scheduledEnd) {
+      const start = new Date(value.scheduledStart);
+      const end = new Date(value.scheduledEnd);
+      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end <= start) {
+        ctx.addIssue({ code: "custom", path: ["scheduledEnd"], message: "End time must be after start time" });
+      }
+    }
+    if (value.locationType === "VIRTUAL" && value.meetingLink !== undefined && !/^https?:\/\/\S+$/i.test(value.meetingLink.trim())) {
+      ctx.addIssue({ code: "custom", path: ["meetingLink"], message: "A valid http(s) meeting link is required" });
+    }
+  }),
+  complete: z.object({
+    outcome: z.enum(VISIT_OUTCOMES),
+    customerResponse: z.string().trim().max(3000).optional().default(""),
+    notes: z.string().trim().max(3000).optional().default(""),
+  }).superRefine((value, ctx) => {
+    if (!value.customerResponse.trim() && !value.notes.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["notes"],
+        message: "Provide visit remarks or customer response when completing a visit",
+      });
+    }
+  }),
+  cancel: z.object({
+    cancellationReason: z.string().trim().min(2, "Cancellation reason is required").max(1000),
   }),
 };
 

@@ -1,6 +1,26 @@
 import mongoose from "mongoose";
 import { toJSONPlugin } from "./plugins.js";
+import {
+  CALL_RESPONSES,
+  LEAD_QUALITIES,
+  VISIT_EVENT_TYPES,
+  VISIT_LOCATION_TYPES,
+  VISIT_OUTCOMES,
+  VISIT_STATUSES,
+  VISIT_TRANSITIONS,
+  VISIT_TYPES,
+} from "../utils/crmMappings.js";
 
+export {
+  CALL_RESPONSES,
+  LEAD_QUALITIES,
+  VISIT_EVENT_TYPES,
+  VISIT_LOCATION_TYPES,
+  VISIT_OUTCOMES,
+  VISIT_STATUSES,
+  VISIT_TRANSITIONS,
+  VISIT_TYPES,
+};
 export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 export const LEAD_STATUSES = ["New", "Assigned", "In Progress", "Submitted", "Changes Requested", "Approved", "Completed"];
 export const WORK_STATUSES = ["UNASSIGNED", "ASSIGNED", "IN_PROGRESS", "SUBMITTED", "CHANGES_REQUESTED", "APPROVED", "COMPLETED"];

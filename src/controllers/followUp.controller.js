@@ -8,6 +8,7 @@ import { sendCreated, sendSuccess } from "../utils/apiResponse.js";
 import { buildMeta, byIdOrCode, getPagination } from "../utils/query.js";
 import { q } from "../middleware/validate.js";
 import { notifyEmployee, notifyEmployeeOnce, notifyOnce } from "../services/notification.service.js";
+import { normaliseCallResponse } from "../utils/crmMappings.js";
 
 const isAdmin = (user) => user?.role === "ADMIN" || user?.role === "MASTER_ADMIN";
 const employeeIdOf = (user) => user?.employee?._id ?? user?.employee;
@@ -39,7 +40,7 @@ function scheduleMatch(bucket, bounds, now) {
   return { nextFollowUpAt: { $type: "date" } };
 }
 
-function latestSchedulePipeline({ employeeId, bucket = "All", includeReviewRequired = false, skip, limit } = {}) {
+function latestSchedulePipeline({ employeeId, bucket = "All", callResponse = "All", includeReviewRequired = false, skip, limit } = {}) {
   const now = new Date();
   const bounds = businessDayBounds();
   const leadMatch = { "lead.followUpsClosed": { $ne: true } };
@@ -47,12 +48,16 @@ function latestSchedulePipeline({ employeeId, bucket = "All", includeReviewRequi
     leadMatch["lead.assignedEmployeeId"] = new mongoose.Types.ObjectId(String(employeeId));
     if (!includeReviewRequired) leadMatch["lead.followUpReviewRequired"] = { $ne: true };
   }
+  const followUpMatch = scheduleMatch(bucket, bounds, now);
+  if (callResponse && callResponse !== "All") {
+    followUpMatch.callResponse = callResponse;
+  }
 
   const pipeline = [
     { $sort: { leadId: 1, attemptNumber: -1 } },
     { $group: { _id: "$leadId", followUp: { $first: "$$ROOT" } } },
     { $replaceRoot: { newRoot: "$followUp" } },
-    { $match: scheduleMatch(bucket, bounds, now) },
+    { $match: followUpMatch },
     { $lookup: { from: Lead.collection.name, localField: "leadId", foreignField: "_id", as: "lead" } },
     { $unwind: "$lead" },
     { $match: leadMatch },
@@ -80,6 +85,8 @@ function latestSchedulePipeline({ employeeId, bucket = "All", includeReviewRequi
               leadId: 1,
               attemptNumber: 1,
               communicationType: 1,
+              callResponse: 1,
+              callResponseRaw: 1,
               contactedAt: 1,
               customerResponse: 1,
               discussionNotes: 1,
@@ -116,6 +123,8 @@ function followUpListItem(doc, showEmployee) {
     leadId: String(doc.leadId),
     attemptNumber: doc.attemptNumber,
     communicationType: doc.communicationType,
+    callResponse: doc.callResponse,
+    callResponseRaw: doc.callResponseRaw,
     contactedAt: doc.contactedAt,
     customerResponse: doc.customerResponse,
     discussionNotes: doc.discussionNotes,
@@ -184,14 +193,21 @@ export const listLeadFollowUps = asyncHandler(async (req, res) => {
   const lead = await findLead(req.params.id);
   if (!isAdmin(req.user) && !employeeOwnsLead(req.user, lead)) throw ApiError.notFound("Lead not found");
 
-  const { page, limit, skip } = getPagination(q(req), { defaultLimit: 50, maxLimit: 100 });
-  const [records, total] = await Promise.all([
-    LeadFollowUp.find({ leadId: lead._id })
+  const query = q(req);
+  const { page, limit, skip } = getPagination(query, { defaultLimit: 50, maxLimit: 100 });
+  const filter = { leadId: lead._id };
+  if (query.callResponse && query.callResponse !== "All") {
+    filter.callResponse = query.callResponse;
+  }
+
+  const [records, filteredTotal, totalAttempts] = await Promise.all([
+    LeadFollowUp.find(filter)
       .select("-idempotencyKey -submittedBy")
       .populate("employeeId", "name code department")
       .sort({ attemptNumber: 1 })
       .skip(skip)
       .limit(limit),
+    LeadFollowUp.countDocuments(filter),
     LeadFollowUp.countDocuments({ leadId: lead._id }),
   ]);
   const includeEmployee = isAdmin(req.user);
@@ -209,11 +225,12 @@ export const listLeadFollowUps = asyncHandler(async (req, res) => {
 
   return sendSuccess(res, items, {
     meta: {
-      ...buildMeta({ page, limit, total }),
-      attempts: total,
+      ...buildMeta({ page, limit, total: filteredTotal }),
+      attempts: totalAttempts,
       maxAttempts: lead.followUpLimit ?? 4,
       reviewRequired: Boolean(lead.followUpReviewRequired),
       closed: Boolean(lead.followUpsClosed),
+      historicalFollowUps: (lead.historicalFollowUps ?? []).map((item) => (typeof item.toJSON === "function" ? item.toJSON() : item)),
     },
   });
 });
@@ -249,6 +266,13 @@ export const createLeadFollowUp = asyncHandler(async (req, res) => {
     throw ApiError.badRequest("The next follow-up must be scheduled after the contact date and time");
   }
 
+  const rawCallResponse = req.body.callResponse?.trim();
+  const callResponse = rawCallResponse ? normaliseCallResponse(rawCallResponse) : undefined;
+  if (rawCallResponse && !callResponse) {
+    throw ApiError.badRequest("Invalid call response category");
+  }
+  const callResponseRaw = rawCallResponse && rawCallResponse !== callResponse ? rawCallResponse : undefined;
+
   let followUp;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const attemptNumber = await LeadFollowUp.countDocuments({ leadId: lead._id }) + 1;
@@ -259,6 +283,8 @@ export const createLeadFollowUp = asyncHandler(async (req, res) => {
     try {
       followUp = await LeadFollowUp.create({
         ...req.body,
+        callResponse,
+        callResponseRaw,
         leadId: lead._id,
         employeeId,
         submittedBy: req.user._id,
@@ -281,7 +307,8 @@ export const createLeadFollowUp = asyncHandler(async (req, res) => {
   }
   if (!followUp) throw ApiError.conflict("Could not allocate a follow-up attempt; please retry");
 
-  lead.log(`Follow-up ${followUp.attemptNumber} recorded`, req.user.name, followUp.discussionNotes);
+  const activityDetail = callResponse ? `[${callResponse}] ${followUp.discussionNotes}` : followUp.discussionNotes;
+  lead.log(`Follow-up ${followUp.attemptNumber} recorded`, req.user.name, activityDetail);
   await lead.save();
   await ensureReviewNotification(lead, followUp);
 
@@ -300,6 +327,7 @@ export const listFollowUps = asyncHandler(async (req, res) => {
   const [result] = await LeadFollowUp.aggregate(latestSchedulePipeline({
     employeeId,
     bucket: query.bucket ?? "All",
+    callResponse: query.callResponse ?? "All",
     includeReviewRequired: isAdmin(req.user),
     skip,
     limit,
@@ -346,7 +374,7 @@ export const followUpSummary = asyncHandler(async (req, res) => {
 export const followUpReport = asyncHandler(async (req, res) => {
   if (!isAdmin(req.user)) throw ApiError.forbidden();
 
-  const [employeeWise, contactedLeadIds, latestSchedules, interestGroups, fourAttemptLeadIds, reviewRequired] = await Promise.all([
+  const [employeeWise, contactedLeadIds, latestSchedules, interestGroups, callResponseGroups, fourAttemptLeadIds, reviewRequired] = await Promise.all([
     LeadFollowUp.aggregate([
       { $group: { _id: "$employeeId", followUps: { $sum: 1 } } },
       { $lookup: { from: Employee.collection.name, localField: "_id", foreignField: "_id", as: "employee" } },
@@ -360,6 +388,9 @@ export const followUpReport = asyncHandler(async (req, res) => {
       { $sort: { leadId: 1, attemptNumber: -1 } },
       { $group: { _id: "$leadId", interestLevel: { $first: "$interestLevel" } } },
       { $group: { _id: "$interestLevel", leads: { $sum: 1 } } },
+    ]),
+    LeadFollowUp.aggregate([
+      { $group: { _id: { $ifNull: ["$callResponse", "LEGACY_UNSPECIFIED"] }, count: { $sum: 1 } } },
     ]),
     LeadFollowUp.distinct("leadId", { attemptNumber: { $gte: 4 } }),
     Lead.countDocuments({ followUpReviewRequired: true, followUpsClosed: { $ne: true } }),
@@ -381,6 +412,7 @@ export const followUpReport = asyncHandler(async (req, res) => {
     fourAttemptsCompleted: fourAttemptLeadIds.length,
     reviewRequired,
     interest: Object.fromEntries(interestGroups.map((item) => [item._id, item.leads])),
+    callResponses: Object.fromEntries(callResponseGroups.map((item) => [item._id, item.count])),
   });
 });
 

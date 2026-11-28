@@ -8,6 +8,8 @@ import { hashCredentialToken } from "../utils/credentialToken.js";
 import { isProd } from "../config/env.js";
 
 const REFRESH_COOKIE = "refreshToken";
+const ADMIN_REFRESH_COOKIE = "adminRefreshToken";
+const EMPLOYEE_REFRESH_COOKIE = "empRefreshToken";
 
 const cookieOptions = {
   httpOnly: true,
@@ -16,6 +18,28 @@ const cookieOptions = {
   path: "/api/auth",
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
+
+function requestPortal(req) {
+  const header = req.get("X-Portal")?.trim().toLowerCase();
+  if (header === "admin" || header === "employee") return header;
+  return null;
+}
+
+function cookieNameForRole(role) {
+  return role === "EMPLOYEE" ? EMPLOYEE_REFRESH_COOKIE : ADMIN_REFRESH_COOKIE;
+}
+
+function resolveRefreshToken(req, portal) {
+  if (req.body?.refreshToken) return req.body.refreshToken;
+  if (portal === "employee") return req.cookies?.[EMPLOYEE_REFRESH_COOKIE] || null;
+  if (portal === "admin") return req.cookies?.[ADMIN_REFRESH_COOKIE] || null;
+  return (
+    req.cookies?.[REFRESH_COOKIE] ||
+    req.cookies?.[ADMIN_REFRESH_COOKIE] ||
+    req.cookies?.[EMPLOYEE_REFRESH_COOKIE] ||
+    null
+  );
+}
 
 /** Shapes a user for the dashboard's AdminUser type. */
 function presentUser(user) {
@@ -50,8 +74,17 @@ export const login = asyncHandler(async (req, res) => {
 
   const accessToken = signAccessToken(user);
   const refreshToken = signRefreshToken(user, user.tokenVersion);
+  const portal = requestPortal(req);
 
-  res.cookie(REFRESH_COOKIE, refreshToken, cookieOptions);
+  // Store separate HttpOnly refresh cookies for Admin vs Employee portals so both
+  // can remain signed in simultaneously inside the same browser. Keep the legacy
+  // cookie only for non-browser API callers that omit X-Portal.
+  res.cookie(cookieNameForRole(user.role), refreshToken, cookieOptions);
+  if (portal) {
+    res.clearCookie(REFRESH_COOKIE, { ...cookieOptions, maxAge: undefined });
+  } else {
+    res.cookie(REFRESH_COOKIE, refreshToken, cookieOptions);
+  }
   return sendSuccess(res, { user: presentUser(user), accessToken, refreshToken });
 });
 
@@ -78,7 +111,8 @@ export const register = asyncHandler(async (req, res) => {
 
 /** POST /api/auth/refresh */
 export const refresh = asyncHandler(async (req, res) => {
-  const token = req.body?.refreshToken || req.cookies?.[REFRESH_COOKIE];
+  const portal = requestPortal(req);
+  const token = resolveRefreshToken(req, portal);
   if (!token) throw ApiError.unauthorized("Refresh token missing");
 
   let payload;
@@ -111,7 +145,18 @@ export const me = asyncHandler(async (req, res) => {
 
 /** POST /api/auth/logout */
 export const logout = asyncHandler(async (req, res) => {
-  res.clearCookie(REFRESH_COOKIE, { ...cookieOptions, maxAge: undefined });
+  const portal = requestPortal(req);
+  const clearOpts = { ...cookieOptions, maxAge: undefined };
+  if (portal === "employee") {
+    res.clearCookie(EMPLOYEE_REFRESH_COOKIE, clearOpts);
+  } else if (portal === "admin") {
+    res.clearCookie(ADMIN_REFRESH_COOKIE, clearOpts);
+    res.clearCookie(REFRESH_COOKIE, clearOpts);
+  } else {
+    res.clearCookie(REFRESH_COOKIE, clearOpts);
+    res.clearCookie(ADMIN_REFRESH_COOKIE, clearOpts);
+    res.clearCookie(EMPLOYEE_REFRESH_COOKIE, clearOpts);
+  }
   return sendSuccess(res, { message: "Logged out" });
 });
 
@@ -128,6 +173,7 @@ export const changePassword = asyncHandler(async (req, res) => {
   user.tokenVersion += 1;
   await user.save();
 
+  res.clearCookie(cookieNameForRole(user.role), { ...cookieOptions, maxAge: undefined });
   res.clearCookie(REFRESH_COOKIE, { ...cookieOptions, maxAge: undefined });
   return sendSuccess(res, { message: "Password updated. Please sign in again." });
 });

@@ -10,6 +10,7 @@ import { buildMeta, byIdOrCode, escapeRegex, getPagination, getSort } from "../u
 import { q } from "../middleware/validate.js";
 import { recalcEmployeeStats } from "../services/stats.service.js";
 import { notifyEmployee, notifyWork } from "../services/notification.service.js";
+import { reassignActiveLeadVisits } from "./visit.controller.js";
 import { emitEvent } from "../config/socket.js";
 
 /** Guards the review workflow: only declared transitions are allowed. */
@@ -166,7 +167,7 @@ export const createWork = asyncHandler(async (req, res) => {
         if (String(previousEmployeeId ?? "") !== String(employee._id)) {
           lead.assignedEmployeeId = employee._id;
           lead.assignedDate = new Date();
-          linkedLeadAssignment = { code: lead.code, previousEmployeeId };
+          linkedLeadAssignment = { code: lead.code, previousEmployeeId, lead };
         }
       }
       lead.log("Work created from lead", actor);
@@ -182,6 +183,7 @@ export const createWork = asyncHandler(async (req, res) => {
       href: `/employee/tasks/${work.code}`,
     });
     if (linkedLeadAssignment) {
+      await reassignActiveLeadVisits(linkedLeadAssignment.lead, employee, req.user);
       await notifyEmployee(employee._id, {
         title: linkedLeadAssignment.previousEmployeeId ? "Lead reassigned to you" : "New lead assigned to you",
         description: `${work.title}: lead assignment updated.`,

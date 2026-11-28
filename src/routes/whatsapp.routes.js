@@ -31,7 +31,12 @@ router.post("/send", validate({ body: whatsappSchemas.send }), ctrl.sendMessage)
 router.get("/bot-flow", ctrl.listBotSteps);
 router.post("/bot-flow", authorize("ADMIN"), validate({ body: whatsappSchemas.botStep }), ctrl.createBotStep);
 router.patch("/bot-flow/reorder", authorize("ADMIN"), validate({ body: whatsappSchemas.reorder }), ctrl.reorderBotSteps);
-router.patch("/bot-flow/:id", authorize("ADMIN"), validate({ params: idParam }), ctrl.updateBotStep);
+router.patch(
+  "/bot-flow/:id",
+  authorize("ADMIN"),
+  validate({ params: idParam, body: whatsappSchemas.botStep.partial() }),
+  ctrl.updateBotStep
+);
 router.delete("/bot-flow/:id", authorize("ADMIN"), validate({ params: idParam }), ctrl.deleteBotStep);
 
 // FAQ answers the smart bot is allowed to send.
